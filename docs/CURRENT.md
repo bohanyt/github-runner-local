@@ -1,6 +1,6 @@
 # CURRENT — github-runner-local
 
-Updated: 2026-09-24. Phase: **C_IMPLEMENTED / AWAITING_INDEPENDENT_EXACT_HEAD_REVIEW + E_SOURCE_IMPLEMENTATION_ACTIVE**.
+Updated: 2026-09-24. Phase: **C_IMPLEMENTED / AWAITING_INDEPENDENT_EXACT_HEAD_REVIEW + E_LOCAL_TAKEOVER_READY**.
 
 ## Authority
 
@@ -8,90 +8,101 @@ Updated: 2026-09-24. Phase: **C_IMPLEMENTED / AWAITING_INDEPENDENT_EXACT_HEAD_RE
 - Control Tower: Issue #1.
 - Owner authorization for C source: Issue #1 comment `5811504614`.
 - Owner authorization for parallel E source/template: Issue #1 comment `5811700793`.
+- Owner transfer of E cloud → local: Issue #1 comment `5813834606`.
 - Opus plan: Issue #2 comment `5807784901`.
 - CT plan review: Issue #2 comment `5807941253`.
-- Current handoff: `docs/control-tower/handoffs/GRL-20260924-C-IMPLEMENTED-REVIEW-READY-E-ACTIVE-V13.md`.
-- Required sentinel: `END_OF_GRL_HANDOFF key=GRL-20260924-C-IMPLEMENTED-REVIEW-READY-E-ACTIVE-V13 sections=9`.
+- Current handoff: `docs/control-tower/handoffs/GRL-20260924-C-REVIEW-READY-E-LOCAL-TAKEOVER-V14.md`.
+- Required sentinel: `END_OF_GRL_HANDOFF key=GRL-20260924-C-REVIEW-READY-E-LOCAL-TAKEOVER-V14 sections=9`.
 
-## Checkpoint C candidate
+## Checkpoint C
 
-- Issue #10 / GRL-009.
-- Branch: `feat/grl-c-device-runner-package`.
-- DRAFT PR #12: open, draft, unmerged, mergeable.
-- Exact base: `cd6f6abd13de9af2122d1c61db774b2dc54f7da0`.
-- Exact candidate head: `67dd220771bf67f65348e622998e005bf30b26bc`.
-- Implementation handoff: Issue #10 comment `5813138169`.
-- Implementation claim `5812908520` released by `5813145195`.
-- Diff: exactly 13 paths, all within the GRL-009 C allowlist.
+Issue #10 / GRL-009 remains independently review-ready.
 
-## C evidence
-
-Worker-local non-elevated Windows evidence:
-- solution restore/build PASS, zero warnings/errors;
-- Core 192/192;
-- Presentation 45/45;
-- Integration 45/45;
-- zero failed/skipped;
-- Windows read-only RunnerContractProbe PASS;
-- official runner v2.337.0 / `actions-runner-win-x64-2.337.0.zip`;
-- SHA-256 `1150692afa94e71f872017e254ea55b6eece1eece3fe7e3a6d4c93d0a1b85cfc` matched;
-- Listener reported `2.337.0`;
-- `config.cmd --help` exposed all 12 required capabilities.
-
-Evidence remains `LOCAL_CHECKED`; official runner metadata is `SOURCE_VERIFIED`.
-
-## Independent C review gate
-
-One independent reviewer must review exact PR #12 head
+DRAFT PR #12 exact head:
 `67dd220771bf67f65348e622998e005bf30b26bc`.
 
-Review must cover the full 13-file C candidate against Issue #10, including:
-- device-flow HTTP/state/error/token-redaction semantics;
-- repository private/admin admission;
-- runner pin trust and URL/hash/download/safe-extraction containment;
-- reparse/symlink/traversal/device/ADS/size/cleanup protections;
-- runner CLI capability/version/argv constraints;
-- deterministic test quality and meaningful negative coverage;
-- Windows contract-probe source safety and whether reported evidence coheres;
-- exact write scope / no E overlap / no live activation.
+Implementation handoff:
+Issue #10 comment `5813138169`.
 
-If PR #12 head moves, the review target is stale.
+No C merge before independent PASS.
 
-No C merge is authorized before independent PASS.
+## Checkpoint E transfer state
 
-## Checkpoint E parallel state
+Issue #11 / GRL-010.
 
-Issue #11 / GRL-010 remains independent and path-disjoint.
+Previous cloud implementation claim:
+`5812970520` — CANCELLED/REVOKED by owner transfer `5813834606`.
 
-Active E implementation claim:
-Issue #1 comment `5812970520`.
+Transfer publication:
+Issue #11 comment `5813835204`.
 
-E branch:
+Existing E branch:
 `feat/grl-e-execution-template`.
 
-E write scope remains:
+At transfer, that branch head was:
+`cd6f6abd13de9af2122d1c61db774b2dc54f7da0`.
+
+It was identical to its base:
+- zero E source commits;
+- zero changed files;
+- no E PR;
+- no E implementation handoff.
+
+A local Codex worker may reuse this existing empty branch after fresh-reading current authority and taking a NEW E implementation claim.
+
+Any later publication from the cancelled cloud worker is stale unless explicitly reconciled by CT.
+
+## E source authority
+
+E still uses:
+- full Issue #11 packet through its 18-section sentinel;
+- CT scope correction `5811742857`;
+- E-B1 blocker `5811944203`;
+- CT protocol clarification `5812014790`;
+- D27 exact-SHA refusal semantics.
+
+Absolute E feature-branch write scope:
 `templates/execution-repo/**` ONLY.
 
-E-B1 resolution remains Issue #11 comment `5812014790`.
+No root workflow/schema/Core/docs source changes are allowed on E branch.
 
-This continuity update is authority/docs-only. An E worker that observes main movement caused by this C continuity transaction must not treat it as a source conflict or silently merge/rebase unless its authority requires that.
+## E local proof
+
+Local Codex may run the complete Node campaign:
+- Node built-in tests;
+- template linter;
+- PASS fixture;
+- FAIL fixture;
+- exact-SHA refusal path;
+- schema mirror check;
+- `git diff --check`.
+
+No Windows-specific proof is required for E.
+
+Evidence ceiling remains `LOCAL_CHECKED`.
+
+## Activation boundaries
+
+Still forbidden:
+- private execution repo creation/use;
+- copying/activating template into a live root workflow;
+- GitHub Actions dispatch;
+- runner registration/start;
+- connector-trigger live proof;
+- Stage-2 credentials;
+- D/G1/service/release work.
 
 ## Open gates
 
-Still OPEN:
-- D09 / OD-1 private execution repo;
-- D10 / OD-2 GitHub App creation/visibility;
-- D21 Stage-2 credentials;
-- D12 service identity/helper;
-- D15 license/signing.
-
-No C merge, live login/App, runner registration/start, live E activation, hosted Actions, D/G1/service/release work is authorized.
-
-## Constraints
-
-PR #3 remains untouched. No hosted Actions. No root workflow activation. No repository setting, security, power, or policy changes.
+D09 / OD-1 private execution repo: OPEN.
+D10 / OD-2 GitHub App creation/visibility: OPEN.
+D21 Stage-2 credentials: OPEN.
+D12 service identity/helper: OPEN.
+D15 license/signing: OPEN.
 
 ## Next
 
-Run one independent exact-head review of DRAFT PR #12. Publish one review verdict on Issue #10, release the review claim, then stop. In parallel, the already-claimed E worker may continue its own Issue #11 source task.
+One local Codex worker may take over E on the existing empty branch `feat/grl-e-execution-template`, post a fresh claim, implement the complete Issue #11 packet + both CT corrections, run local Node proof, publish one DRAFT PR + 9-section handoff, release, and stop.
+
+In parallel, a separate reviewer may continue the exact-head C review.
 
