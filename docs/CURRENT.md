@@ -1,90 +1,123 @@
 # CURRENT — github-runner-local
 
-Updated: 2026-09-24. Phase: **B_MERGED / C_SOURCE_READY + E_SOURCE_READY_AFTER_PROTOCOL_CLARIFICATION**.
+Updated: 2026-09-25. Phase: **C_IMPLEMENTED / AWAITING_INDEPENDENT_EXACT_HEAD_REVIEW + E_RACE_RECONCILIATION_READY**.
 
 ## Authority
 
 - Canonical branch: `main`.
 - Control Tower: Issue #1.
-- Owner authorization for B merge + C source: Issue #1 comment `5811504614`.
-- Owner authorization for parallel E source/template: Issue #1 comment `5811700793`.
+- Owner authorization for C source: Issue #1 comment `5811504614`.
+- Owner authorization for E source/template: Issue #1 comment `5811700793`.
+- Owner cloud→local transfer: Issue #1 comment `5813834606`.
 - Opus plan: Issue #2 comment `5807784901`.
 - CT plan review: Issue #2 comment `5807941253`.
-- Current handoff: `docs/control-tower/handoffs/GRL-20260924-C-E-PARALLEL-E-B1-RESOLVED-V12.md`.
-- Required sentinel: `END_OF_GRL_HANDOFF key=GRL-20260924-C-E-PARALLEL-E-B1-RESOLVED-V12 sections=9`.
+- Current handoff: `docs/control-tower/handoffs/GRL-20260925-C-REVIEW-READY-E-RACE-RECONCILIATION-V15.md`.
+- Required sentinel: `END_OF_GRL_HANDOFF key=GRL-20260925-C-REVIEW-READY-E-RACE-RECONCILIATION-V15 sections=9`.
 
-## Completed base
+## Checkpoint C
 
-Checkpoint B remains merged and complete at merge commit `09c87d00e1741083db000ec21220b34841606310`.
+Issue #10 / GRL-009 remains independently review-ready.
 
-## Parallel source tasks
+DRAFT PR #12 exact head:
+`67dd220771bf67f65348e622998e005bf30b26bc`.
 
-### C — Issue #10 / GRL-009
+No C merge before independent PASS.
 
-Still ready for a later local Windows worker on branch:
-`feat/grl-c-device-runner-package`.
+## Checkpoint E race
 
-C authority and constraints are unchanged.
+Issue #11 / GRL-010.
 
-### E — Issue #11 / GRL-010
+Cancelled cloud claim:
+`5812970520`.
 
-Cloud-friendly source/template task.
+Owner transfer:
+`5813834606`.
 
-Branch:
-`feat/grl-e-execution-template`
+Local takeover claim:
+`5813930109`, released blocked by `5814361882`.
 
-Write scope:
+Blocked handoff:
+Issue #11 `5814358849`.
+
+Unexpected remote E head:
+`e13f868be0c42f0327c530a03e2e4ac884e9da75`.
+
+That stale cloud commit:
+- appeared after claim revocation;
+- changes 31 paths, all under `templates/execution-repo/**`;
+- has no PR or implementation handoff;
+- is not automatically accepted or discarded.
+
+Unpublished local candidate:
+`dbba8b3e25d38fc6a03d8981bc6bcbd3a52c940c`.
+
+Local reported proof:
+- Node v24.14.1;
+- 87 passed / 0 skipped;
+- linter PASS;
+- schema mirrors PASS;
+- PASS/FAIL fixtures PASS;
+- E-B1 refusal proof PASS with zero profile processes;
+- 33 template paths.
+
+## E reconciliation authority
+
+CT packet:
+Issue #11 `5823097901`.
+
+Decision D28 requires evidence-driven no-force reconciliation.
+
+One local Codex reconciliation worker must:
+- preserve both commits;
+- run the full proof campaign independently on BOTH exact candidates;
+- compare complete source against Issue #11 + `5811742857` + `5812014790`;
+- select or integrate the strongest compliant tree;
+- never force-push.
+
+If local/integrated tree is selected, publication uses a reconciliation merge:
+- first parent = current remote E head `e13f868...`;
+- second parent = selected local commit;
+- tree = exact selected local commit tree;
+- push is fast-forward on the canonical E branch.
+
+Absolute E source scope remains:
 `templates/execution-repo/**` ONLY.
 
-Durable packet:
-Issue #11 through
-`END_OF_GRL_E_PACKET key=GRL-010-E-EXECUTION-TEMPLATE-SOURCE-20260924 sections=18`.
+## E publication gate
 
-Parallel-scope correction:
-Issue #11 comment `5811742857`.
+No E PR/handoff exists yet.
 
-Preimplementation blocker:
-Issue #11 comment `5811944203` (E-B1).
+Final E candidate must have:
+- full Node tests;
+- linter;
+- schema mirror;
+- PASS/FAIL fixtures;
+- E-B1 refusal proof;
+- `git diff --check`;
+- exact template-only path proof.
 
-CT protocol resolution:
-Issue #11 comment `5812014790`.
+After publication, a different independent reviewer reviews E.
 
-D27 makes the resolution durable.
+## Activation boundaries
 
-## E-B1 resolved semantics
-
-For requested SHA A but checked-out HEAD B:
-
-- zero profile processes execute;
-- no canonical `grl.result.v1` / result artifact is emitted;
-- no `tested_sha` is fabricated;
-- source emits internal BLOCKED / `CHECKOUT_SHA_MISMATCH`;
-- report publishes bounded `grl-exec-refusal v1` negative evidence and a failing `grl/<profile>` commit status on requested SHA A;
-- verdict fails;
-- complete refusal publication is terminal BLOCKED;
-- missing/partial refusal publication is REPORTING_INCOMPLETE.
-
-Root Core/schema remain unchanged.
-
-## E activation remains forbidden
-
-No private execution repo, root workflow activation, Actions dispatch, runner registration/start, connector-trigger live proof, or Stage-2 credential work.
+No private execution repo.
+No root workflow activation.
+No Actions dispatch.
+No runner activation.
+No Stage-2 credentials.
+No D/G1/service/release work.
 
 ## Open gates
 
-Still OPEN:
-- D09 / OD-1 private execution repo;
-- D10 / OD-2 GitHub App creation/visibility;
-- D21 Stage-2 credentials;
-- D12 service identity/helper;
-- D15 license/signing.
-
-D, live E activation, G1, service mode and release remain unauthorized.
-
-## Constraints
-
-No GitHub-hosted Actions. No root workflow changes. No repository settings changes. No live runner/App/login activation. No security/power/policy changes.
+D09 / OD-1 private execution repo: OPEN.
+D10 / OD-2 GitHub App creation/visibility: OPEN.
+D21 Stage-2 credentials: OPEN.
+D12 service identity/helper: OPEN.
+D15 license/signing: OPEN.
 
 ## Next
 
-A cloud GPT worker may now claim Issue #11 and implement E source completely, applying both CT corrections `5811742857` and `5812014790`, publish one DRAFT PR/handoff, release, and stop. Independent exact-head review follows.
+One local Codex worker claims the E reconciliation task, compares `e13f868...` and `dbba8b3...`, publishes the selected reconciled E candidate without force, creates one DRAFT PR + 9-section handoff, releases, and stops.
+
+C review may proceed independently.
+

@@ -1,9 +1,16 @@
-name: grl-verdict
-description: Fail unless execution PASS and required reporting completed
+name: GRL verdict
+description: Fail unless execution passed and publication completed
 inputs:
-  execution-status: {required: true}
-  status-posted: {required: true}
-  comment-posted: {required: true}
+  admitted:
+    required: false
+  execution-status:
+    required: false
+  reporting-complete:
+    required: false
+  execute-job-result:
+    required: false
+  report-job-result:
+    required: false
 runs:
   using: node20
-  main: index.js
+  main: main.mjs

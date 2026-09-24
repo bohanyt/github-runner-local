@@ -1,1 +1,0 @@
-const fs=require('node:fs');const path=require('node:path');const p=process.argv[2]||'results/pass.xml';fs.mkdirSync(path.dirname(p),{recursive:true});fs.writeFileSync(p,'<testsuite tests="2" failures="0" errors="0" skipped="0"><testcase name="a"/><testcase name="b"/></testsuite>\n');console.log('fixture pass');

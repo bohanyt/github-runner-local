@@ -1,0 +1,20 @@
+{
+  "id": "js-smoke",
+  "version": 1,
+  "max_timeout_minutes": 5,
+  "min_tests": 1,
+  "estimated_disk_gib": 1,
+  "required_capabilities": ["node"],
+  "steps": [
+    {
+      "name": "js-smoke",
+      "executable": "node",
+      "argv": ["fixtures/js-smoke/run.mjs"],
+      "timeout_seconds": 60,
+      "test_result": {
+        "kind": "junit",
+        "path": "fixtures/js-smoke/results.xml"
+      }
+    }
+  ]
+}

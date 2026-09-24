@@ -1,19 +1,8 @@
-name: grl-run-profile
-description: Execute one reviewed fixed profile at the exact requested SHA
+name: GRL run profile
+description: Exact-SHA fixed-profile execution
 inputs:
-  request-json: {required: true}
-  request-body-sha256: {required: true}
-  request-comment-id: {required: true}
-  containing-branch: {required: true}
-  branch-head-at-admission: {required: true}
-  admitted-at: {required: true}
-  runner-json: {required: true}
-  disk-reserve-gib: {required: true}
-  target-dir: {required: true}
-  profile-dir: {required: true}
-  output-dir: {required: true}
-outputs:
-  execution-status: {description: "execution-status"}
+  identity-b64:
+    required: true
 runs:
   using: node20
-  main: index.js
+  main: main.mjs

@@ -1,7 +1,9 @@
 name: GRL dispatch
+
 on:
   issue_comment:
     types: [created]
+
 permissions: {}
 
 jobs:
@@ -13,6 +15,7 @@ jobs:
       github.event.comment.author_association == 'OWNER' &&
       startsWith(github.event.comment.body, '<!-- grl-request v1 -->')
     runs-on: [self-hosted, Windows, X64, grl-exec]
+    timeout-minutes: 10
     permissions:
       contents: read
       issues: write
@@ -20,121 +23,115 @@ jobs:
       statuses: read
     outputs:
       admitted: ${{ steps.admit.outputs.admitted }}
-      request-json: ${{ steps.admit.outputs.request-json }}
-      request-body-sha256: ${{ steps.admit.outputs.request-body-sha256 }}
-      containing-branch: ${{ steps.admit.outputs.containing-branch }}
-      branch-head-at-admission: ${{ steps.admit.outputs.branch-head-at-admission }}
-      admitted-at: ${{ steps.admit.outputs.admitted-at }}
-      runner-json: ${{ steps.admit.outputs.runner-json }}
+      identity_b64: ${{ steps.admit.outputs.identity_b64 }}
+      target_sha: ${{ steps.admit.outputs.target_sha }}
+      timeout_minutes: ${{ steps.admit.outputs.timeout_minutes }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
       - id: admit
         uses: ./.github/actions/grl-admit
         with:
-          token: ${{ github.token }}
-          comment-body: ${{ github.event.comment.body }}
-          comment-id: ${{ github.event.comment.id }}
-          comment-created-at: ${{ github.event.comment.created_at }}
-          allowed-branches: ${{ vars.GRL_ALLOWED_BRANCHES }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          mailbox-issue: ${{ vars.GRL_MAILBOX_ISSUE }}
           authorized-actors: ${{ vars.GRL_AUTHORIZED_ACTORS }}
-          disk-reserve-gib: ${{ vars.GRL_DISK_RESERVE_GIB }}
+          allowed-branches: ${{ vars.GRL_ALLOWED_BRANCHES }}
+          reserve-gib: ${{ vars.GRL_DISK_RESERVE_GIB }}
 
   execute:
-    needs: [admit]
+    needs: admit
     if: needs.admit.outputs.admitted == 'true'
     runs-on: [self-hosted, Windows, X64, grl-exec]
+    timeout-minutes: ${{ fromJSON(needs.admit.outputs.timeout_minutes) }}
     permissions:
       contents: read
     outputs:
-      execution-status: ${{ steps.run.outputs.execution-status }}
+      result_b64: ${{ steps.run-profile.outputs.result_b64 }}
+      outcome_b64: ${{ steps.run-profile.outputs.outcome_b64 }}
+      execution_status: ${{ steps.run-profile.outputs.execution_status }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           ref: ${{ github.sha }}
-          path: .grl/workflow
+          path: grl-trusted
           persist-credentials: false
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          ref: ${{ fromJSON(needs.admit.outputs.request-json).target.sha }}
-          path: target
+          ref: ${{ needs.admit.outputs.target_sha }}
+          path: grl-target
           persist-credentials: false
-      - id: run
-        uses: ./.grl/workflow/.github/actions/grl-run-profile
+      - id: run-profile
+        uses: ./grl-trusted/.github/actions/grl-run-profile
         with:
-          request-json: ${{ needs.admit.outputs.request-json }}
-          request-body-sha256: ${{ needs.admit.outputs.request-body-sha256 }}
-          request-comment-id: ${{ github.event.comment.id }}
-          containing-branch: ${{ needs.admit.outputs.containing-branch }}
-          branch-head-at-admission: ${{ needs.admit.outputs.branch-head-at-admission }}
-          admitted-at: ${{ needs.admit.outputs.admitted-at }}
-          runner-json: ${{ needs.admit.outputs.runner-json }}
-          disk-reserve-gib: ${{ vars.GRL_DISK_RESERVE_GIB }}
-          target-dir: target
-          profile-dir: .grl/workflow/profiles
-          output-dir: .grl/outcome
+          identity-b64: ${{ needs.admit.outputs.identity_b64 }}
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
           name: grl-execution-outcome-${{ github.run_id }}
-          path: .grl/outcome
+          path: grl-outcome
           retention-days: 3
-          if-no-files-found: error
+          if-no-files-found: warn
           overwrite: true
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        if: steps.run.outputs.execution-status == 'BLOCKED'
+        if: steps.run-profile.outputs.execution_status == 'BLOCKED'
         with:
-          name: grl-exec-refusal-${{ github.run_id }}
-          path: .grl/outcome/refusal.marker
+          name: grl-exec-refusal-${{ github.run_id }}-${{ github.run_attempt }}
+          path: grl-outcome/refusal.marker
           retention-days: 3
           if-no-files-found: error
           overwrite: true
 
   report:
     needs: [admit, execute]
-    if: always() && needs.admit.outputs.admitted == 'true' && needs.execute.result != 'skipped'
+    if: always() && needs.admit.outputs.admitted == 'true'
     runs-on: [self-hosted, Windows, X64, grl-exec]
+    timeout-minutes: 10
     permissions:
       contents: read
       issues: write
       statuses: write
       actions: read
     outputs:
-      execution-status: ${{ steps.report.outputs.execution-status }}
-      status-posted: ${{ steps.report.outputs.status-posted }}
-      comment-posted: ${{ steps.report.outputs.comment-posted }}
+      reporting_complete: ${{ steps.report.outputs.reporting_complete }}
+      execution_status: ${{ steps.report.outputs.execution_status }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           ref: ${{ github.sha }}
-          path: .grl/workflow
           persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        continue-on-error: true
         with:
           name: grl-execution-outcome-${{ github.run_id }}
-          path: .grl/outcome
+          path: grl-outcome
       - id: report
-        uses: ./.grl/workflow/.github/actions/grl-report
+        uses: ./.github/actions/grl-report
         with:
-          token: ${{ github.token }}
-          outcome-dir: .grl/outcome
+          token: ${{ secrets.GITHUB_TOKEN }}
+          mailbox-issue: ${{ vars.GRL_MAILBOX_ISSUE }}
+          identity-b64: ${{ needs.admit.outputs.identity_b64 }}
+          result-b64: ${{ needs.execute.outputs.result_b64 }}
+          outcome-b64: ${{ needs.execute.outputs.outcome_b64 }}
+          outcome-dir: grl-outcome
 
   verdict:
     needs: [admit, execute, report]
-    if: always() && needs.admit.outputs.admitted == 'true'
+    if: always() && needs.admit.result != 'skipped'
     runs-on: [self-hosted, Windows, X64, grl-exec]
+    timeout-minutes: 5
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           ref: ${{ github.sha }}
-          path: .grl/workflow
           persist-credentials: false
-      - uses: ./.grl/workflow/.github/actions/grl-verdict
+      - uses: ./.github/actions/grl-verdict
         with:
-          execution-status: ${{ needs.report.outputs.execution-status || needs.execute.outputs.execution-status || 'INTERRUPTED' }}
-          status-posted: ${{ needs.report.outputs.status-posted || 'false' }}
-          comment-posted: ${{ needs.report.outputs.comment-posted || 'false' }}
+          admitted: ${{ needs.admit.outputs.admitted }}
+          execution-status: ${{ needs.report.outputs.execution_status }}
+          reporting-complete: ${{ needs.report.outputs.reporting_complete }}
+          execute-job-result: ${{ needs.execute.result }}
+          report-job-result: ${{ needs.report.result }}

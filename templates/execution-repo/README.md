@@ -1,41 +1,47 @@
-# GRL execution-repository template (inactive source)
+# GRL execution repository template (Checkpoint E)
 
-This directory is **source only**. It is nested under `templates/execution-repo`, so GitHub does not activate its workflow in `github-runner-local`. Checkpoint E does not create or use a private execution repository and does not dispatch Actions.
+This is an **inactive source template** for a separate execution repository. Its nested `.github/workflows/grl-dispatch.yml` is not a workflow in the control repository. Copying it, enabling Actions, provisioning a runner, or sending a request requires separate owner decisions and activation proofs. Checkpoint E supplies source and local tests only; it does not run hosted Actions or prove report-only rerun behavior in GitHub Actions.
 
 ## Stage-1 boundary
 
-Stage 1 accepts only owner-authored requests on one mailbox issue, targets the execution repository itself, requires exact 40-hex SHAs contained in reviewed allowlisted branches, and executes only reviewed data-only profiles. This is **trusted-code-only**, not a sandbox: code on an allowed branch can still be malicious and a compromised owner/connector session can authorize code execution as the runner identity. No PAT, installation token, multi-repo checkout, arbitrary command field, source write-back, service mode, or runner activation is present here.
+The only allowed request target is the execution repository itself (`target.repository == GITHUB_REPOSITORY`). The workflow uses `issue_comment: created` with top-level `permissions: {}`. The `admit` job has a job-level prefilter for the configured mailbox issue, non-PR comment, authorized actor, `OWNER` association, and exact request marker. All four jobs require `[self-hosted, Windows, X64, grl-exec]`. There are no hosted runner labels, remote third-party actions, Stage-2 credentials, or cross-repository checkout.
 
-Configure the eventual reviewed private copy with repository variables `GRL_MAILBOX_ISSUE` (JSON number), `GRL_AUTHORIZED_ACTORS` (JSON array of logins), `GRL_ALLOWED_BRANCHES` (JSON array, initially `['main']` in valid JSON double-quote form), and `GRL_DISK_RESERVE_GIB`. The later runner activation must also set process environment `GRL_RUNNER_VERSION` to the actually installed runner version; admission rejects missing/noncanonical runner metadata rather than inventing a version. Activation must happen only under a later authorized packet because `issue_comment` workflows must exist on the default branch to receive events.
+Configure repository variables before a separately approved activation:
 
-## Workflow
+| Variable | Format | Purpose |
+| --- | --- | --- |
+| `GRL_MAILBOX_ISSUE` | Positive issue number | The one request mailbox |
+| `GRL_AUTHORIZED_ACTORS` | JSON string array, e.g. `["owner"]` | Actors allowed to create requests and rerun |
+| `GRL_ALLOWED_BRANCHES` | JSON string array, e.g. `["main"]` | Branches in which the requested SHA must be contained |
+| `GRL_DISK_RESERVE_GIB` | Nonnegative integer | Free disk held in reserve |
 
-`grl-dispatch.yml` has four jobs: `admit`, `execute`, `report`, `verdict`. Every job uses `[self-hosted, Windows, X64, grl-exec]`. The admission job has a job-level mailbox/PR/actor/OWNER/marker filter so non-matching comments reserve no self-hosted job. Remote actions are first-party only and pinned to full commit SHAs. Checkout credentials are never persisted. The bounded execution outcome is transferred with a 3-day artifact; runtime proof that a GitHub **re-run failed jobs** operation reuses successful execution output without rerunning tests remains **UNVERIFIED until activation**.
+The later runner activation must set `GRL_RUNNER_VERSION` to the actual installed runner version and `GRL_IDENTITY_CLASS` to `portable-user` or `service-account`; missing or noncanonical metadata blocks execution rather than producing an invented result.
 
-Pinned source refs verified for this checkpoint: `actions/checkout` `11d5960a326750d5838078e36cf38b85af677262`, `actions/upload-artifact` `ea165f8d65b6e75b540449e92b4886f43607fa02`, and `actions/download-artifact` `d3f86a106a0bac45b974a628896c90dbdf5c8093`.
+The template has no token other than the job-scoped `GITHUB_TOKEN`. The admit job reads the original comment again, verifies the exact fenced request bytes and SHA/profile identity, checks branch containment, checks replay state, and posts a bounded ACK. Profiles are reviewed JSON data with an executable and `argv` array; no request field selects a machine, shell, script, or arbitrary command. The only bundled profile is `js-smoke`. The profile definition SHA is the Git blob SHA-1 of its exact bytes, so profile files are excluded from line-ending conversion by `.gitattributes`.
 
-## Exact-SHA refusal
+The execute job checks the target checkout HEAD before any profile process. If it differs from the requested SHA, it runs **zero** profile processes, creates **no** canonical `result.json`, and sends a bounded internal `BLOCKED / CHECKOUT_SHA_MISMATCH` outcome. Report then posts `<!-- grl-exec-refusal v1 -->` (at most 8 KiB) and a failing `grl/js-smoke` commit status on the requested SHA. It never asserts `tested_sha` for this refusal. Actually executed outcomes use the canonical `<!-- grl-result v1 -->` contract (at most 16 KiB comment, 32 KiB result). A test failure is execution data. The final verdict succeeds only for admitted, exact-SHA `PASS` with both comment and commit status published; every refusal or incomplete report fails.
 
-If request SHA A was admitted but checked-out HEAD is B, `grl-run-profile` spawns **zero** profile processes and emits no canonical `grl.result.v1`. It records bounded internal `BLOCKED / CHECKOUT_SHA_MISMATCH` data. Reporting publishes `<!-- grl-exec-refusal v1 -->` with requested A, observed B, and `profile_executed:false`, plus a failing `grl/<profile>` commit status on A. It never contains `tested_sha` or test counts. Complete refusal publication is terminal BLOCKED; partial/missing refusal reporting is REPORTING_INCOMPLETE. The final verdict always fails for BLOCKED.
+Results and status publications retry independently, at most three attempts. The execute job also uploads a bounded three-day outcome artifact and a separate refusal marker artifact for E-B1. Report can consume the outcome artifact if job outputs are unavailable; reconciliation uses the refusal marker to classify a concluded run with missing refusal publication as `REPORTING_INCOMPLETE`. The observer distinguishes complete E-B1 refusal from interrupted or partially reported runs. Reconciliation is bounded to the recent mailbox window. GitHub Actions runtime proof, especially report-only rerun behavior after an interrupted run, remains an activation prerequisite and is **not** claimed by these local source checks.
 
-## Profiles and fixtures
+## Local checks
 
-Profiles are strict JSON, data-only, and execute an `executable` plus an `argv` array with `shell:false`. `profile.definition_sha` is the Git blob SHA of the exact profile bytes at the workflow commit. `js-smoke-pass` and `js-smoke-fail` are dependency-free deterministic fixtures that write JUnit XML; the failing fixture is test data, not a harness/infrastructure failure.
-
-## Development proof
-
-From the public product repository root, with Node 20+:
+From the control repository root, with Node 20 or later:
 
 ```text
-node --test templates/execution-repo/tests/*.test.js
-node templates/execution-repo/tools/check-schema-mirrors.js .
-node templates/execution-repo/tools/lint-template.js
+node --version
+node --test templates/execution-repo/tests/*.test.mjs
+node templates/execution-repo/tools/lint.mjs
+node templates/execution-repo/tools/fixture-proof.mjs pass
+node templates/execution-repo/tools/fixture-proof.mjs fail
+node templates/execution-repo/tools/fixture-proof.mjs refusal
+node templates/execution-repo/tools/schema-check.mjs
+git diff --check
 ```
 
-For branch-scope checking, set `GRL_LINT_BASE` to the exact base commit before running the linter from a real git checkout. Also run `git diff --check <base>..HEAD` and verify every changed path begins `templates/execution-repo/`.
+The linter checks the workflow's trigger, permissions, prefilter, runner labels, immutable first-party action pins, checkout credentials, shell expressions, Stage-2 leakage, profile shape, report/verdict dependency, refusal routing, schema byte mirror, and changed-path scope. The `tests/` folder includes negative mutations of these rules. The mirrored request/result schemas under `schemas/` must be byte-for-byte equal to the control repository's root schemas; `schema-check.mjs` fails on drift. No npm install is needed.
 
-No npm install is used. The tests use only Node built-ins. Schema mirrors are required to be byte-for-byte equal to root merged schemas.
+## Activation prerequisites
 
-## Activation proofs still required later
+An independent exact-head review and owner decision must precede any copy to a private execution repository. Activation must separately establish a dedicated non-elevated Windows runner with the exact label set, a mailbox issue, repository variables, branch and actor policy, runner isolation, token permission behavior, and real GitHub Actions reporting/retry proofs. The control repository's root workflows and schemas stay outside this template's scope. The template is not activated by this Checkpoint E publication.
 
-A later authorized activation must create reviewed fixture commits in the private execution repo and prove the connector-authored owner comment actually triggers the default-branch workflow, real Windows runner behavior, exact-SHA refusal publication/status, report-rerun behavior, pause/disconnect/reconciliation, and the owner-acceptance campaign. Nothing in this source checkpoint is `WINDOWS_TESTED` or `OWNER_ACCEPTED`.
+Later activation must also create and review fixture commits in the private execution repository, record their exact PASS and FAIL SHAs, and verify dispatch against those SHAs. This public template checkpoint creates no private repository or private fixture commits.

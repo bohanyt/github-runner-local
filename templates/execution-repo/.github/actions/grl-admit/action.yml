@@ -1,21 +1,16 @@
-name: grl-admit
-description: Strict Stage-1 request admission
+name: GRL admit
+description: Strict Stage-1 request admission and bounded ACK
 inputs:
-  token: {required: true}
-  comment-body: {required: true}
-  comment-id: {required: true}
-  comment-created-at: {required: true}
-  allowed-branches: {required: true}
-  authorized-actors: {required: true}
-  disk-reserve-gib: {required: true}
-outputs:
-  admitted: {description: "admitted"}
-  request-json: {description: "request-json"}
-  request-body-sha256: {description: "request-body-sha256"}
-  containing-branch: {description: "containing-branch"}
-  branch-head-at-admission: {description: "branch-head-at-admission"}
-  admitted-at: {description: "admitted-at"}
-  runner-json: {description: "runner-json"}
+  token:
+    required: true
+  mailbox-issue:
+    required: true
+  authorized-actors:
+    required: true
+  allowed-branches:
+    required: true
+  reserve-gib:
+    required: true
 runs:
   using: node20
-  main: index.js
+  main: main.mjs
