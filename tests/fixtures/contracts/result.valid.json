@@ -1,0 +1,67 @@
+{
+  "schema_version": "grl.result.v1",
+  "request_id": "b70dfe32-244d-4b79-a781-523a0b828447",
+  "request_comment_id": 123,
+  "request_body_sha256": "53bb85435444d602d99d188c586c120257d903cf0a88fc3474a3ff44254a8dda",
+  "execution_repo": "bohanyt/grl-exec",
+  "run": {
+    "id": 456,
+    "attempt": 1,
+    "url": "https://github.com/bohanyt/grl-exec/actions/runs/456"
+  },
+  "workflow_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "profile": {
+    "id": "smoke-fixture",
+    "definition_sha": "cccccccccccccccccccccccccccccccccccccccc"
+  },
+  "target": {
+    "repository": "bohanyt/grl-exec",
+    "requested_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "tested_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "containing_branch": "main",
+    "branch_head_at_admission": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "runner": {
+    "name": "example-runner",
+    "version": "2.337.0",
+    "os": "Windows",
+    "arch": "X64",
+    "identity_class": "portable-user",
+    "elevated": false
+  },
+  "timing": {
+    "admitted_at": "2026-09-24T05:01:00Z",
+    "started_at": "2026-09-24T05:02:00Z",
+    "finished_at": "2026-09-24T05:03:00Z",
+    "phases": [{ "name": "test", "duration_s": 60 }]
+  },
+  "checks": [
+    {
+      "name": "fixture",
+      "exit_code": 0,
+      "duration_s": 60,
+      "tests": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0,
+        "errored": 0,
+        "source": "junit"
+      }
+    }
+  ],
+  "execution_status": "PASS",
+  "disk": {
+    "free_before_gib": 100,
+    "free_after_gib": 99,
+    "reserve_gib": 15
+  },
+  "artifacts": [],
+  "logs": {
+    "url": "https://github.com/bohanyt/grl-exec/actions/runs/456"
+  },
+  "report": {
+    "attempts": 1,
+    "status_posted": true,
+    "comment_posted": true
+  }
+}
