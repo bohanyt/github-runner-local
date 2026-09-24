@@ -52,6 +52,7 @@ export function fakeApi(currentEvent = event(request())) {
     comparison: 'ahead',
     branch: { sha: B },
     run: { concluded: false, conclusion: null },
+    artifacts: [],
     commitStatus: null,
     async getComment() { return this.original; },
     async listComments() { return this.comments; },
@@ -60,6 +61,7 @@ export function fakeApi(currentEvent = event(request())) {
     async postIssueComment(issue, text) { posted.push({ issue, body: text }); },
     async createStatus(sha, status) { statuses.push({ sha, ...status }); },
     async getRun() { return this.run; },
+    async getRunArtifacts() { return this.artifacts; },
     async getCommitStatus() { return this.commitStatus; }
   };
   return api;

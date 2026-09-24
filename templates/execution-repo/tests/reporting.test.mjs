@@ -44,6 +44,21 @@ test('canonical PASS/FAIL results retain exact tested SHA and bounded result con
   { code: 'INVALID_PASS' });
 });
 
+test('canonical validator rejects nested schema and observer identity violations', async t => {
+  const base = canonicalResult();
+  const cases = [
+    ['unknown nested field', { ...base, runner: { ...base.runner, token: 'x' } }],
+    ['invalid run URL', { ...base, run: { ...base.run, url: 'https://example.invalid/' } }],
+    ['elevated runner', { ...base, runner: { ...base.runner, elevated: true } }],
+    ['out-of-order timing', { ...base, timing: { ...base.timing,
+      started_at: '2026-09-24T12:02:00Z', finished_at: '2026-09-24T12:01:00Z' } }],
+    ['invalid test count', { ...base, checks: [{ ...base.checks[0], tests: {
+      ...base.checks[0].tests, failed: -1 } }] }]
+  ];
+  for (const [name, value] of cases)
+    await t.test(name, () => assert.throws(() => validateCanonicalResult(value, identity())));
+});
+
 test('E-B1 refusal has the exact negative identity, no tested SHA or canonical result', async () => {
   const api = fakeApi();
   const published = await publishReport({ identity: identity(), refusal: outcome(),
@@ -171,6 +186,13 @@ test('verdict requires admission, PASS, and complete reporting', () => {
       for (const reportingComplete of [false, true])
         assert.equal(evaluateVerdict({ admitted, executionStatus, reportingComplete }).pass,
           admitted && executionStatus === 'PASS' && reportingComplete);
+});
+
+test('verdict stays red when execution or report job fails', () => {
+  assert.equal(evaluateVerdict({ admitted: true, executionStatus: 'PASS',
+    reportingComplete: true, executeJobResult: 'failure' }).pass, false);
+  assert.equal(evaluateVerdict({ admitted: true, executionStatus: 'PASS',
+    reportingComplete: true, reportJobResult: 'failure' }).pass, false);
 });
 
 test('report comments redact token-shaped strings', async () => {

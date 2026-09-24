@@ -28,7 +28,7 @@ export async function proveFixture(kind) {
       runStep: run,
       readCounts: readTestCounts,
       system: { isElevated: async () => false, freeDiskGiB: async () => 39 },
-      runner: { name: 'fixture-runner', version: 'source', identityClass: 'portable-user' }
+      runner: { name: 'fixture-runner', version: '2.337.0', identityClass: 'portable-user' }
     });
     if (kind === 'refusal') {
       if (execution.kind !== 'refusal' || processCalls !== 0 ||

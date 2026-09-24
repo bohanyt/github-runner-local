@@ -7,10 +7,11 @@ import { lintSource, lintTemplate } from '../tools/lint.mjs';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const source = {
-  workflow: readFileSync(resolve(root, '.github/workflows/grl-dispatch.yml'), 'utf8'),
+  workflow: readFileSync(resolve(root, '.github/workflows/grl-dispatch.yml'), 'utf8').replaceAll('\r\n', '\n'),
   profiles: [readFileSync(resolve(root, 'profiles/js-smoke.json'))],
   runAction: readFileSync(resolve(root, '.github/actions/grl-run-profile/main.mjs'), 'utf8'),
   reportLibrary: readFileSync(resolve(root, 'lib/reporting.mjs'), 'utf8'),
+  verdictAction: readFileSync(resolve(root, '.github/actions/grl-verdict/main.mjs'), 'utf8'),
   changedPaths: ['templates/execution-repo/README.md'], drift: []
 };
 const mutate = (field, before, after) => ({ ...source,
@@ -30,6 +31,8 @@ test('linter rejects workflow trigger, permission, prefilter and runner regressi
     [mutate('workflow', 'runs-on: [self-hosted, Windows, X64, grl-exec]',
       'runs-on: ubuntu-latest'), 'RUNNER_'],
     [mutate('workflow', 'if: >-', 'if: true'), 'JOB_LEVEL_PREFILTER']
+    , [mutate('workflow', "startsWith(github.event.comment.body, '<!-- grl-request v1 -->')",
+      "startsWith(github.event.comment.body, '<!-- grl-request v1 -->') || true"), 'WEAK_PREFILTER']
   ];
   for (const [candidate, code] of cases)
     assert.ok(lintSource(candidate).some(x => x.startsWith(code)), code);
@@ -66,6 +69,10 @@ test('linter rejects profile, dependency, schema drift, scope and E-B1 routing r
     [{ ...source, changedPaths: ['src/Program.cs'] }, 'WRITE_SCOPE'],
     [mutate('workflow', 'outcome-b64: ${{ needs.execute.outputs.outcome_b64 }}',
       'outcome-b64: ${{ needs.execute.outputs.result_b64 }}'), 'REFUSAL_ROUTE'],
+    [mutate('workflow', "if: steps.run-profile.outputs.execution_status == 'BLOCKED'",
+      'if: false'), 'REFUSAL_MARKER_ARTIFACT'],
+    [mutate('workflow', 'reporting-complete: ${{ needs.report.outputs.reporting_complete }}',
+      'reporting-complete: true'), 'GREEN_ON_REPORT_FAILURE'],
     [mutate('runAction', "output('result_b64', '');",
       "writeFileSync('result.json', '{}');"), 'REFUSAL_CANONICAL_RESULT']
   ];

@@ -11,6 +11,8 @@ inputs:
     required: false
   outcome-b64:
     required: false
+  outcome-dir:
+    required: false
 runs:
   using: node20
   main: main.mjs

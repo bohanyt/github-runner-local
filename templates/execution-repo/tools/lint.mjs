@@ -5,7 +5,8 @@ import { fileURLToPath } from 'node:url';
 import { validateProfile } from '../lib/protocol.mjs';
 import { schemaDrift } from './schema-check.mjs';
 
-export function lintSource({ workflow, profiles, runAction, reportLibrary, changedPaths = [], drift = [] }) {
+export function lintSource({ workflow, profiles, runAction, reportLibrary,
+  verdictAction, changedPaths = [], drift = [] }) {
   const errors = [];
   const requireText = (condition, code) => { if (!condition) errors.push(code); };
   requireText(/^on:\s*\r?\n\s+issue_comment:\s*\r?\n\s+types:\s*\[created\]/m.test(workflow), 'TRIGGER');
@@ -20,6 +21,8 @@ export function lintSource({ workflow, profiles, runAction, reportLibrary, chang
   ]) requireText(admit.includes(fragment), 'PREFILTER_' + fragment.slice(0, 18));
   requireText(admit.includes('if: >-') && admit.indexOf('if: >-') < admit.indexOf('runs-on:'),
     'JOB_LEVEL_PREFILTER');
+  requireText(!/\|\||\btrue\b/.test(admit.slice(admit.indexOf('if: >-'), admit.indexOf('runs-on:'))),
+    'WEAK_PREFILTER');
   const jobs = ['admit', 'execute', 'report', 'verdict'];
   for (const job of jobs) {
     const section = new RegExp(`\\n  ${job}:\\s*\\r?\\n([\\s\\S]*?)(?=\\n  (?:admit|execute|report|verdict):|$)`)
@@ -38,7 +41,7 @@ export function lintSource({ workflow, profiles, runAction, reportLibrary, chang
   requireText(checkoutBlocks.length >= 4, 'CHECKOUT_COUNT');
   for (const block of checkoutBlocks)
     requireText(/persist-credentials:\s*false/.test(block), 'CHECKOUT_CREDENTIALS');
-  requireText(!/\brun:\s*(?:\||>|.*\$\{\{)/.test(workflow), 'SHELL_RUN');
+  requireText(!/^\s+-\s+run:/m.test(workflow), 'SHELL_RUN');
   requireText(!/\brepository:\s*\$\{\{|installation.token|private.key|APP_PRIVATE_KEY|STAGE.?2/i.test(workflow),
     'STAGE2_CREDENTIAL');
   for (const match of workflow.matchAll(/retention-days:\s*(\d+)/g))
@@ -49,12 +52,22 @@ export function lintSource({ workflow, profiles, runAction, reportLibrary, chang
     /verdict:\s*\r?\n[\s\S]*?if:\s*always\(\)\s*&&/.test(workflow), 'VERDICT_DEPENDENCY');
   requireText(workflow.includes('outcome-b64: ${{ needs.execute.outputs.outcome_b64 }}') &&
     workflow.includes('result-b64: ${{ needs.execute.outputs.result_b64 }}'), 'REFUSAL_ROUTE');
+  requireText(workflow.includes('grl-exec-refusal-${{ github.run_id }}-${{ github.run_attempt }}') &&
+    workflow.includes("if: steps.run-profile.outputs.execution_status == 'BLOCKED'"),
+    'REFUSAL_MARKER_ARTIFACT');
+  requireText(workflow.includes('grl-execution-outcome-${{ github.run_id }}') &&
+    workflow.includes('actions/download-artifact@'), 'OUTCOME_ARTIFACT');
   const refusalBranch = /if \(execution.kind === 'refusal'\) \{([\s\S]*?)\} else \{/.exec(runAction)?.[1] ?? '';
   requireText(refusalBranch.includes("output('result_b64', '')") &&
-    !refusalBranch.includes('result.json') && !refusalBranch.includes('writeFileSync'),
+    !refusalBranch.includes('result.json'),
     'REFUSAL_CANONICAL_RESULT');
   requireText(reportLibrary.includes('REFUSAL_MARKER') && reportLibrary.includes('makeRefusal'),
     'REFUSAL_REPORT');
+  requireText(workflow.includes('reporting-complete: ${{ needs.report.outputs.reporting_complete }}') &&
+    workflow.includes('execute-job-result: ${{ needs.execute.result }}') &&
+    workflow.includes('report-job-result: ${{ needs.report.result }}') &&
+    verdictAction?.includes('evaluateVerdict') && verdictAction.includes('failAction'),
+    'GREEN_ON_REPORT_FAILURE');
   for (const bytes of profiles) {
     try { validateProfile(bytes); } catch { errors.push('PROFILE'); }
   }
@@ -83,6 +96,7 @@ export function lintTemplate(templateRoot) {
     workflow, profiles,
     runAction: readFileSync(resolve(templateRoot, '.github/actions/grl-run-profile/main.mjs'), 'utf8'),
     reportLibrary: readFileSync(resolve(templateRoot, 'lib/reporting.mjs'), 'utf8'),
+    verdictAction: readFileSync(resolve(templateRoot, '.github/actions/grl-verdict/main.mjs'), 'utf8'),
     changedPaths: changedPaths(resolve(templateRoot, '../..')),
     drift: schemaDrift(templateRoot)
   });

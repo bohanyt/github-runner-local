@@ -33,7 +33,7 @@ export class GitHubApi {
   async listComments(issue, since, limit = 200) {
     const output = [];
     for (let page = 1; page <= 2 && output.length < limit; page++) {
-      const query = `per_page=100&page=${page}&since=${encodeURIComponent(since)}`;
+      const query = `per_page=100&page=${page}&sort=created&direction=desc&since=${encodeURIComponent(since)}`;
       const batch = await this.request('GET', `/repos/${this.repository}/issues/${issue}/comments?${query}`);
       if (!Array.isArray(batch)) throw new ProtocolError('GITHUB_API_ERROR');
       output.push(...batch);
@@ -54,9 +54,17 @@ export class GitHubApi {
     return value?.status ?? null;
   }
 
-  async getRun(id) {
-    const run = await this.request('GET', `/repos/${this.repository}/actions/runs/${id}`, undefined, true);
+  async getRun(id, attempt) {
+    const run = await this.request('GET',
+      `/repos/${this.repository}/actions/runs/${id}/attempts/${attempt}`, undefined, true);
     return run ? { concluded: run.status === 'completed', conclusion: run.conclusion } : null;
+  }
+
+  async getRunArtifacts(id) {
+    const listing = await this.request('GET',
+      `/repos/${this.repository}/actions/runs/${id}/artifacts?per_page=100`);
+    if (!Array.isArray(listing?.artifacts)) throw new ProtocolError('GITHUB_API_ERROR');
+    return listing.artifacts.map(item => item.name);
   }
 
   async getCommitStatus(sha, context) {

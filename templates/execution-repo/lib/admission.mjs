@@ -1,13 +1,8 @@
 import { ACK_MARKER, REFUSAL_MARKER, RESULT_MARKER, ProtocolError, SHA, SHA256,
-  exactKeys, fenced, parseRequestEnvelope, parseStrictJson, reject, validateProfile } from './protocol.mjs';
+  exactKeys, fenced, parseMarkedComment, parseRequestEnvelope, reject, validateProfile } from './protocol.mjs';
+import { validateCanonicalResult } from './reporting.mjs';
 
-export function parseMarkedComment(body, marker) {
-  if (typeof body !== 'string' || !body.startsWith(marker + '\n')) return null;
-  const rest = body.slice(marker.length);
-  const match = /^\r?\n```json\r?\n([\s\S]*?)\r?\n```[ \t\r\n]*$/.exec(rest);
-  if (!match) return null;
-  try { return parseStrictJson(match[1]); } catch { return null; }
-}
+export { parseMarkedComment };
 
 export function ackFor(identity, admitted, reasonCode) {
   return {
@@ -20,6 +15,7 @@ export function ackFor(identity, admitted, reasonCode) {
     workflow_sha: identity?.workflow_sha ?? null,
     profile: identity?.profile ?? null,
     target: identity?.target ?? null,
+    min_tests: identity?.min_tests ?? null,
     admitted,
     reason_code: reasonCode
   };
@@ -160,7 +156,7 @@ export function validateRefusal(refusal, ack, status) {
   } catch { return false; }
 }
 
-export function observeTerminal({ ack, run, comments, status }) {
+export function observeTerminal({ ack, run, comments, status, refusalExpected = false }) {
   if (!run?.concluded) return { outcome: 'ACTIVE', reportingComplete: false };
   const botComments = comments.filter(x => x.user?.login === 'github-actions[bot]');
   const refusals = botComments.map(x => parseMarkedComment(x.body, REFUSAL_MARKER)).filter(Boolean);
@@ -170,9 +166,13 @@ export function observeTerminal({ ack, run, comments, status }) {
       return { outcome: 'BLOCKED', reportingComplete: true };
     return { outcome: 'REPORTING_INCOMPLETE', reportingComplete: false };
   }
+  if (refusalExpected)
+    return { outcome: 'REPORTING_INCOMPLETE', reportingComplete: false };
   const results = botComments.map(x => parseMarkedComment(x.body, RESULT_MARKER)).filter(Boolean);
   const result = results.find(x => x.request_id === ack.request_id && x.run?.id === ack.run?.id);
   if (result) {
+    try { validateCanonicalResult(result, ack); }
+    catch { return { outcome: 'REPORTING_INCOMPLETE', reportingComplete: false }; }
     const complete = result.request_comment_id === ack.request_comment_id &&
       result.request_body_sha256 === ack.request_body_sha256 &&
       result.execution_repo === ack.execution_repo &&
@@ -200,20 +200,22 @@ export async function reconcileRecent({ api, mailboxIssue, since, limit = 20 }) 
   const comments = (await api.listComments(mailboxIssue, since, 200)).slice(0, 200);
   const acks = comments.filter(x => x.user?.login === 'github-actions[bot]')
     .map(x => parseMarkedComment(x.body, ACK_MARKER))
-    .filter(x => x?.admitted === true).slice(-limit);
+    .filter(x => x?.admitted === true).slice(0, limit);
   const notes = [];
   for (const ack of acks) {
-    const run = await api.getRun(ack.run.id);
+    const run = await api.getRun(ack.run.id, ack.run.attempt);
+    const artifacts = run?.concluded ? await api.getRunArtifacts(ack.run.id) : [];
+    const refusalExpected = artifacts.includes(`grl-exec-refusal-${ack.run.id}-${ack.run.attempt}`);
     const status = await api.getCommitStatus(ack.target.requested_sha, `grl/${ack.profile.id}`);
-    const state = observeTerminal({ ack, run, comments, status });
-    if (state.outcome === 'ACTIVE' || state.outcome === 'REPORTED' ||
-        state.outcome === 'BLOCKED') continue;
+    const state = observeTerminal({ ack, run, comments, status, refusalExpected });
+    if (state.outcome === 'ACTIVE' || state.reportingComplete) continue;
     if (comments.some(x => {
       const note = parseMarkedComment(x.body, '<!-- grl-reconcile v1 -->');
-      return note?.request_id === ack.request_id && note?.run_id === ack.run.id;
+      return note?.request_id === ack.request_id && note?.run_id === ack.run.id &&
+        note?.run_attempt === ack.run.attempt;
     })) continue;
     const note = { schema_version: 'grl.reconcile.v1', request_id: ack.request_id,
-      run_id: ack.run.id, outcome: state.outcome };
+      run_id: ack.run.id, run_attempt: ack.run.attempt, outcome: state.outcome };
     await api.postIssueComment(mailboxIssue, fenced('<!-- grl-reconcile v1 -->', note, 2048));
     notes.push(note);
   }

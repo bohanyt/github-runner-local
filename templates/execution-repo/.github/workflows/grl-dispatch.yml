@@ -66,6 +66,22 @@ jobs:
         uses: ./grl-trusted/.github/actions/grl-run-profile
         with:
           identity-b64: ${{ needs.admit.outputs.identity_b64 }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: grl-execution-outcome-${{ github.run_id }}
+          path: grl-outcome
+          retention-days: 3
+          if-no-files-found: warn
+          overwrite: true
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: steps.run-profile.outputs.execution_status == 'BLOCKED'
+        with:
+          name: grl-exec-refusal-${{ github.run_id }}-${{ github.run_attempt }}
+          path: grl-outcome/refusal.marker
+          retention-days: 3
+          if-no-files-found: error
+          overwrite: true
 
   report:
     needs: [admit, execute]
@@ -76,6 +92,7 @@ jobs:
       contents: read
       issues: write
       statuses: write
+      actions: read
     outputs:
       reporting_complete: ${{ steps.report.outputs.reporting_complete }}
       execution_status: ${{ steps.report.outputs.execution_status }}
@@ -84,6 +101,11 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        continue-on-error: true
+        with:
+          name: grl-execution-outcome-${{ github.run_id }}
+          path: grl-outcome
       - id: report
         uses: ./.github/actions/grl-report
         with:
@@ -92,6 +114,7 @@ jobs:
           identity-b64: ${{ needs.admit.outputs.identity_b64 }}
           result-b64: ${{ needs.execute.outputs.result_b64 }}
           outcome-b64: ${{ needs.execute.outputs.outcome_b64 }}
+          outcome-dir: grl-outcome
 
   verdict:
     needs: [admit, execute, report]
@@ -110,3 +133,5 @@ jobs:
           admitted: ${{ needs.admit.outputs.admitted }}
           execution-status: ${{ needs.report.outputs.execution_status }}
           reporting-complete: ${{ needs.report.outputs.reporting_complete }}
+          execute-job-result: ${{ needs.execute.result }}
+          report-job-result: ${{ needs.report.result }}

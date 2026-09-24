@@ -126,6 +126,10 @@ export async function runProfile({
       gitBlobSha(trustedProfileBytes) !== identity.profile.definition_sha)
     reject('PROFILE_DEFINITION_MISMATCH');
   if (identity.timeout_minutes > profile.max_timeout_minutes) reject('TIMEOUT_OVER_MAX');
+  if (typeof runner?.name !== 'string' || !runner.name ||
+      typeof runner.version !== 'string' || !/^\d+(?:\.\d+){1,3}$/.test(runner.version) ||
+      !['portable-user', 'service-account'].includes(runner.identityClass))
+    reject('RUNNER_METADATA_UNAVAILABLE');
   if (await system.isElevated()) reject('ELEVATED_RUNNER');
   const started = now();
   const deadline = started + identity.timeout_minutes * 60_000;
@@ -175,7 +179,7 @@ export async function runProfile({
     profile: identity.profile,
     target: { ...identity.target, tested_sha: requested },
     runner: {
-      name: runner.name, version: runner.version, os: 'Windows', arch: 'X64',
+      name: redact(runner.name), version: runner.version, os: 'Windows', arch: 'X64',
       identity_class: runner.identityClass, elevated: false
     },
     timing: {

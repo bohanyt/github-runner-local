@@ -1,6 +1,12 @@
 import { statfsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 
+export function elevatedFromGroups(groups) {
+  const levels = [...String(groups).matchAll(/S-1-16-(\d+)/g)].map(match => Number(match[1]));
+  if (levels.length === 0) throw Error('ELEVATION_MEASUREMENT_UNAVAILABLE');
+  return Math.max(...levels) >= 12288;
+}
+
 export function systemAdapter(root = process.cwd()) {
   return {
     async freeDiskGiB() {
@@ -10,7 +16,7 @@ export function systemAdapter(root = process.cwd()) {
     async isElevated() {
       if (process.platform !== 'win32') return process.getuid?.() === 0;
       const groups = execFileSync('whoami.exe', ['/groups'], { encoding: 'utf8', timeout: 5000 });
-      return /S-1-16-(?:12288|16384)\b/.test(groups);
+      return elevatedFromGroups(groups);
     },
     async hasCapability(name) {
       if (name === 'node') return Boolean(process.execPath);

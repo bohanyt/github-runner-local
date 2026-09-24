@@ -91,6 +91,14 @@ export function parseStrictJson(text) {
   return value;
 }
 
+export function parseMarkedComment(body, marker) {
+  if (typeof body !== 'string' || !body.startsWith(marker + '\n')) return null;
+  const rest = body.slice(marker.length);
+  const match = /^\r?\n```json\r?\n([\s\S]*?)\r?\n```[ \t\r\n]*$/.exec(rest);
+  if (!match) return null;
+  try { return parseStrictJson(match[1]); } catch { return null; }
+}
+
 export function utcMillis(text) {
   if (typeof text !== 'string' || !UTC.test(text)) reject('INVALID_TIME');
   const time = Date.parse(text);

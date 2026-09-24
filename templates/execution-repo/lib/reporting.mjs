@@ -1,5 +1,5 @@
-import { REFUSAL_MARKER, RESULT_MARKER, SHA, exactKeys, fenced, redact, reject } from './protocol.mjs';
-import { parseMarkedComment } from './admission.mjs';
+import { REFUSAL_MARKER, RESULT_MARKER, REPOSITORY, SHA, SHA256, UUID4, exactKeys,
+  fenced, parseMarkedComment, redact, reject, utcMillis } from './protocol.mjs';
 
 function sanitizePublic(value) {
   if (typeof value === 'string') return redact(value);
@@ -10,12 +10,22 @@ function sanitizePublic(value) {
 }
 
 export function validateCanonicalResult(result, identity) {
+  const nonnegative = value => Number.isFinite(value) && value >= 0;
+  const count = value => Number.isSafeInteger(value) && value >= 0;
+  const nonempty = value => typeof value === 'string' && value.length > 0;
   exactKeys(result, ['schema_version', 'request_id', 'request_comment_id',
     'request_body_sha256', 'execution_repo', 'run', 'workflow_sha', 'profile',
     'target', 'runner', 'timing', 'checks', 'execution_status', 'disk',
     'artifacts', 'logs', 'report']);
+  exactKeys(result.run, ['id', 'attempt', 'url']);
+  exactKeys(result.profile, ['id', 'definition_sha']);
   exactKeys(result.target, ['repository', 'requested_sha', 'tested_sha',
     'containing_branch', 'branch_head_at_admission']);
+  exactKeys(result.runner, ['name', 'version', 'os', 'arch', 'identity_class', 'elevated']);
+  exactKeys(result.timing, ['admitted_at', 'started_at', 'finished_at', 'phases']);
+  exactKeys(result.disk, ['free_before_gib', 'free_after_gib', 'reserve_gib']);
+  exactKeys(result.logs, ['url']);
+  exactKeys(result.report, ['attempts', 'status_posted', 'comment_posted']);
   if (result.schema_version !== 'grl.result.v1' ||
       result.request_id !== identity.request_id ||
       result.request_comment_id !== identity.request_comment_id ||
@@ -35,12 +45,54 @@ export function validateCanonicalResult(result, identity) {
       !['PASS', 'FAIL', 'BLOCKED', 'CANCELLED', 'TIMED_OUT', 'EXPIRED', 'REJECTED', 'INTERRUPTED']
         .includes(result.execution_status))
     reject('INVALID_CANONICAL_RESULT');
-  if (!Array.isArray(result.checks) || !Array.isArray(result.artifacts) ||
-      result.logs?.url !== identity.run.url ||
-      result.runner?.elevated !== false) reject('INVALID_CANONICAL_RESULT');
+  if (!UUID4.test(result.request_id) || !count(result.request_comment_id) ||
+      result.request_comment_id < 1 || !SHA256.test(result.request_body_sha256) ||
+      !REPOSITORY.test(result.execution_repo) || !REPOSITORY.test(result.target.repository) ||
+      !SHA.test(result.workflow_sha) || !SHA.test(result.profile.definition_sha) ||
+      !SHA.test(result.target.requested_sha) || !SHA.test(result.target.branch_head_at_admission) ||
+      !count(result.run.id) || result.run.id < 1 || !count(result.run.attempt) ||
+      result.run.attempt < 1 || result.run.url !==
+        `https://github.com/${result.execution_repo}/actions/runs/${result.run.id}` ||
+      !nonempty(result.target.containing_branch) ||
+      result.target.containing_branch.includes('..') || /\s/.test(result.target.containing_branch) ||
+      result.target.containing_branch.startsWith('/') ||
+      result.target.containing_branch.endsWith('/') ||
+      !nonempty(result.runner.name) || !nonempty(result.runner.version) ||
+      result.runner.os !== 'Windows' || result.runner.arch !== 'X64' ||
+      !['portable-user', 'service-account'].includes(result.runner.identity_class) ||
+      result.runner.elevated !== false ||
+      !Array.isArray(result.checks) || !Array.isArray(result.artifacts) ||
+      result.logs.url !== identity.run.url ||
+      !nonnegative(result.disk.free_before_gib) ||
+      !nonnegative(result.disk.free_after_gib) || !count(result.disk.reserve_gib) ||
+      !count(result.report.attempts) || result.report.attempts < 1 ||
+      typeof result.report.status_posted !== 'boolean' ||
+      typeof result.report.comment_posted !== 'boolean') reject('INVALID_CANONICAL_RESULT');
+  const admitted = utcMillis(result.timing.admitted_at);
+  const started = utcMillis(result.timing.started_at);
+  const finished = utcMillis(result.timing.finished_at);
+  if (admitted > started || started > finished || !Array.isArray(result.timing.phases))
+    reject('INVALID_TIMING');
+  for (const phase of result.timing.phases) {
+    exactKeys(phase, ['name', 'duration_s']);
+    if (!nonempty(phase.name) || !nonnegative(phase.duration_s)) reject('INVALID_PHASE');
+  }
+  for (const check of result.checks) {
+    exactKeys(check, ['name', 'exit_code', 'duration_s', 'tests']);
+    exactKeys(check.tests, ['passed', 'failed', 'skipped', 'errored', 'source']);
+    if (!nonempty(check.name) || !Number.isSafeInteger(check.exit_code) ||
+        !nonnegative(check.duration_s) || !nonempty(check.tests.source) ||
+        !['passed', 'failed', 'skipped', 'errored'].every(key => count(check.tests[key])))
+      reject('INVALID_CHECK');
+  }
+  for (const artifact of result.artifacts) {
+    exactKeys(artifact, ['name', 'url']);
+    if (!nonempty(artifact.name) || !/^https:\/\//.test(artifact.url)) reject('INVALID_ARTIFACT');
+  }
   const passed = result.checks.reduce((sum, x) => sum + x.tests.passed, 0);
   if (result.execution_status === 'PASS' &&
-      (passed < identity.min_tests || result.checks.length < 1 ||
+      (!count(identity.min_tests) || identity.min_tests < 1 ||
+       passed < identity.min_tests || result.checks.length < 1 ||
        result.checks.some(x => x.exit_code !== 0 || x.tests.failed !== 0 || x.tests.errored !== 0)))
     reject('INVALID_PASS');
   if (Buffer.byteLength(JSON.stringify(result), 'utf8') > 32 * 1024) reject('RESULT_TOO_LARGE');
@@ -140,8 +192,10 @@ export async function publishReport({
   };
 }
 
-export function evaluateVerdict({ admitted, executionStatus, reportingComplete }) {
-  return admitted === true && executionStatus === 'PASS' && reportingComplete === true
+export function evaluateVerdict({ admitted, executionStatus, reportingComplete,
+  executeJobResult = 'success', reportJobResult = 'success' }) {
+  return admitted === true && executionStatus === 'PASS' && reportingComplete === true &&
+    executeJobResult === 'success' && reportJobResult === 'success'
     ? { pass: true, reason: 'PASS' }
     : { pass: false, reason: reportingComplete !== true ? 'REPORTING_INCOMPLETE' :
       executionStatus ?? 'NO_EXECUTION' };

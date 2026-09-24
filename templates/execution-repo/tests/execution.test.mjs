@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { parseJUnit, parseTrx, runProfile, spawnStep } from '../lib/execution.mjs';
 import { proveFixture } from '../tools/fixture-proof.mjs';
 import { A, B, identity, profileBytes } from './helpers.mjs';
+import { elevatedFromGroups } from '../lib/system-adapter.mjs';
 
 function harness({ head = A, exitCode = 0, counts = { passed: 1, failed: 0,
   skipped: 0, errored: 0, source: 'junit' }, timedOut = false,
@@ -17,7 +18,7 @@ function harness({ head = A, exitCode = 0, counts = { passed: 1, failed: 0,
       return { exitCode, stdout: '', stderr: '', truncated: false, timedOut };
     },
     readCounts: async () => counts, system,
-    runner: { name: runnerName, version: 'source', identityClass: 'portable-user' },
+    runner: { name: runnerName, version: '2.337.0', identityClass: 'portable-user' },
     now: () => Date.parse('2026-09-24T12:02:00Z')
   });
   return { run, calls };
@@ -73,7 +74,7 @@ test('missing or invalid test report after process execution remains FAIL data',
       truncated: false, timedOut: false }),
     readCounts: async () => { throw Error('JUnit file missing'); },
     system: { isElevated: async () => false, freeDiskGiB: async () => 39 },
-    runner: { name: 'runner', version: 'source', identityClass: 'portable-user' }
+    runner: { name: 'runner', version: '2.337.0', identityClass: 'portable-user' }
   });
   assert.equal(executed.kind, 'result');
   assert.equal(executed.result.execution_status, 'FAIL');
@@ -121,4 +122,21 @@ test('PASS and FAIL fixture proofs are real local process executions', async () 
   assert.equal(failing.execution.result.checks[0].tests.failed, 1);
   assert.equal(passing.processCalls, 1);
   assert.equal(failing.processCalls, 1);
+});
+
+test('runner metadata is measured rather than invented', async () => {
+  const id = identity();
+  await assert.rejects(runProfile({
+    identity: id, trustedProfileBytes: profileBytes, targetRoot: '<target>',
+    getHead: async () => A, runStep: async () => { throw Error('must not execute'); },
+    readCounts: async () => ({}),
+    system: { isElevated: async () => false },
+    runner: { name: 'runner', version: 'unknown', identityClass: 'portable-user' }
+  }), { code: 'RUNNER_METADATA_UNAVAILABLE' });
+  assert.equal(elevatedFromGroups('S-1-16-8192'), false);
+  assert.equal(elevatedFromGroups('S-1-16-12288'), true);
+  assert.equal(elevatedFromGroups('S-1-16-20480'), true);
+  assert.throws(() => elevatedFromGroups('no integrity SID'), /ELEVATION_MEASUREMENT_UNAVAILABLE/);
+  const masked = await harness({ runnerName: 'ghp_secretvalue' }).run();
+  assert.equal(masked.result.runner.name, '[REDACTED]');
 });

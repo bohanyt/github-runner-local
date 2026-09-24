@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { admitRequest, observeTerminal, parseMarkedComment, reconcileRecent } from '../lib/admission.mjs';
-import { ACK_MARKER, fenced } from '../lib/protocol.mjs';
-import { A, B, bodyDigest, context, event, fakeApi, fakeSystem, identity,
+import { ACK_MARKER, RESULT_MARKER, fenced } from '../lib/protocol.mjs';
+import { A, B, bodyDigest, canonicalResult, context, event, fakeApi, fakeSystem, identity,
   profileBytes, profilePolicies, request } from './helpers.mjs';
 
 async function attempt(evt = event(request()), modify = () => {}) {
@@ -124,4 +124,45 @@ test('bounded reconciliation posts one note and does not duplicate it', async ()
   api.comments.push(api.posted[0]);
   assert.equal((await reconcileRecent({ api, mailboxIssue: 7,
     since: '2026-09-23T12:00:00Z' })).length, 0);
+});
+
+test('durable refusal marker makes missing publication REPORTING_INCOMPLETE', async () => {
+  const api = fakeApi();
+  const ack = { ...identity(), admitted: true };
+  api.comments = [{ body: fenced(ACK_MARKER, ack, 4096),
+    user: { login: 'github-actions[bot]' } }];
+  api.run = { concluded: true, conclusion: 'cancelled' };
+  api.artifacts = [`grl-exec-refusal-${ack.run.id}-${ack.run.attempt}`];
+  const notes = await reconcileRecent({ api, mailboxIssue: 7, since: '2026-09-23T12:00:00Z' });
+  assert.equal(notes.length, 1);
+  assert.equal(notes[0].outcome, 'REPORTING_INCOMPLETE');
+});
+
+test('complete canonical result is not reconciled as missing reporting', async () => {
+  const api = fakeApi();
+  const ack = { ...identity(), admitted: true };
+  const result = canonicalResult();
+  result.report = { attempts: 1, status_posted: true, comment_posted: true };
+  api.comments = [
+    { body: fenced(ACK_MARKER, ack, 4096), user: { login: 'github-actions[bot]' } },
+    { body: fenced(RESULT_MARKER, result, 16 * 1024), user: { login: 'github-actions[bot]' } }
+  ];
+  api.run = { concluded: true, conclusion: 'success' };
+  api.commitStatus = { sha: A, context: 'grl/js-smoke', state: 'success',
+    target_url: ack.run.url };
+  assert.deepEqual(await reconcileRecent({ api, mailboxIssue: 7,
+    since: '2026-09-23T12:00:00Z' }), []);
+  assert.equal(api.posted.length, 0);
+});
+
+test('canonical PASS with invalid test counts is not observer-complete', () => {
+  const ack = { ...identity(), admitted: true };
+  const result = canonicalResult();
+  result.checks[0].tests.passed = 0;
+  result.report = { attempts: 1, status_posted: true, comment_posted: true };
+  assert.deepEqual(observeTerminal({ ack, run: { concluded: true, conclusion: 'success' },
+    comments: [{ body: fenced(RESULT_MARKER, result, 16 * 1024),
+      user: { login: 'github-actions[bot]' } }],
+    status: { sha: A, context: 'grl/js-smoke', state: 'success', target_url: ack.run.url } }),
+  { outcome: 'REPORTING_INCOMPLETE', reportingComplete: false });
 });
