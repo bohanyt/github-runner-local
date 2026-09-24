@@ -26,6 +26,8 @@ Use `ACCEPTED` only for explicit owner direction or an approved technical decisi
 | D20 | ACCEPTED | A1 Windows path policy must be host-independent explicit Windows semantics; Linux test success is only `LOCAL_CHECKED`. |
 | D21 | OPEN | Stage-2 multi-repo checkout credential/minting authority is not sufficiently designed for activation; first live acceptance must remain inside the private execution repo fixture. |
 | D22 | PROPOSED | Official runner initial package is pinned by reviewed digest, while default auto-update may later change the installed version; management operations must detect and gate unsupported versions rather than guess/downgrade. |
+| D23 | ACCEPTED | Owner authorizes Checkpoint B per GRL-005 (#8): .NET 10 WPF `net10.0-windows` x64 framework-dependent wizard shell with fake adapters only; no live GitHub/auth/runner/OS-probe/process/network behavior. Source: Issue #1 comment `5809860108`. D11 self-contained packaging remains PROPOSED. |
+| D24 | ACCEPTED | Evidence labels for Checkpoint B: headless tests and fake-mode UI automation smoke on a worker Windows desktop are `LOCAL_CHECKED` (with qualifier). `WINDOWS_TESTED` is reserved for real-integration acceptance (G1 and gated live checkpoints). Source: Issue #1 comment `5809860108`. |
 
 ## Corrections to earlier exploratory conversation
 
