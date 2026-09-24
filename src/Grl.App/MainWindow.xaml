@@ -1,0 +1,118 @@
+<Window x:Class="Grl.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="GitHub Runner Local — Preview" Width="900" Height="700"
+        MinWidth="640" MinHeight="480" Loaded="Window_Loaded"
+        Background="{DynamicResource {x:Static SystemColors.WindowBrushKey}}"
+        Foreground="{DynamicResource {x:Static SystemColors.WindowTextBrushKey}}">
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
+        <Style TargetType="Button">
+            <Setter Property="Margin" Value="0,0,10,8" />
+            <Setter Property="Padding" Value="14,8" />
+            <Setter Property="MinHeight" Value="36" />
+        </Style>
+    </Window.Resources>
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                  AutomationProperties.Name="Preview wizard content">
+        <StackPanel Margin="24">
+            <Border Padding="12" BorderThickness="2" BorderBrush="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}">
+                <TextBlock Text="{Binding PreviewBanner}" TextWrapping="Wrap" FontWeight="Bold"
+                           AutomationProperties.Name="{Binding PreviewBanner}" />
+            </Border>
+            <TextBlock Text="{Binding Notice}" Margin="0,10,0,0" TextWrapping="Wrap"
+                       AutomationProperties.Name="{Binding Notice}" />
+            <TextBlock Text="{Binding CurrentPage.Title}" FontSize="24" FontWeight="Bold"
+                       Margin="0,20,0,10" AutomationProperties.Name="{Binding CurrentPage.Title}" />
+            <TextBlock Text="{Binding CurrentPage.Body}" TextWrapping="Wrap" Margin="0,0,0,14"
+                       AutomationProperties.Name="{Binding CurrentPage.Body}" />
+
+            <StackPanel Visibility="{Binding IsWelcome, Converter={StaticResource BoolToVisibility}}">
+                <CheckBox x:Name="AcknowledgeBox" Content="_I understand the trusted-code and workplace disclosure"
+                          IsChecked="{Binding Acknowledged, Mode=TwoWay}" Margin="0,0,0,14"
+                          AutomationProperties.Name="Welcome trusted-code acknowledgement" />
+                <Button Content="_Continue preview" Command="{Binding WelcomeContinueCommand}"
+                        IsDefault="True" HorizontalAlignment="Left"
+                        AutomationProperties.Name="Welcome continue preview" />
+            </StackPanel>
+
+            <StackPanel Visibility="{Binding IsInWizard, Converter={StaticResource BoolToVisibility}}">
+                <TextBlock Text="{Binding DeviceCodeText}" TextWrapping="Wrap" Margin="0,0,0,8"
+                           AutomationProperties.Name="{Binding DeviceCodeText}" />
+                <TextBlock Text="{Binding PreflightReasonText}" TextWrapping="Wrap" Margin="0,0,0,8"
+                           AutomationProperties.Name="{Binding PreflightReasonText}" />
+                <TextBlock Text="{Binding RepositoryListText, StringFormat=Fictional repositories: {0}}"
+                           TextWrapping="Wrap" Margin="0,0,0,8"
+                           AutomationProperties.Name="Fictional repository list" />
+                <TextBlock Text="{Binding SelectedRepositoryText}" TextWrapping="Wrap" Margin="0,0,0,8"
+                           AutomationProperties.Name="{Binding SelectedRepositoryText}" />
+                <TextBlock Text="{Binding LocationText, StringFormat=Proposed fictional location: {0}}"
+                           TextWrapping="Wrap" Margin="0,0,0,14"
+                           AutomationProperties.Name="Fictional local location" />
+                <ItemsControl ItemsSource="{Binding Actions}" AutomationProperties.Name="Available wizard actions">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Button Content="{Binding Label}" Command="{Binding Command}"
+                                    IsDefault="{Binding IsPrimary}" IsCancel="{Binding IsCancel}"
+                                    AutomationProperties.Name="{Binding AutomationName}" />
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <Button Content="Preview _remove local files plan" Command="{Binding PreviewRemovalCommand}"
+                        HorizontalAlignment="Left" Margin="0,8,0,0"
+                        AutomationProperties.Name="Preview local file removal plan" />
+                <TextBlock Text="{Binding DeletionPlanText}" TextWrapping="Wrap" Margin="0,8,0,12"
+                           AutomationProperties.Name="{Binding DeletionPlanText}" />
+                <Expander Header="Preview simulation controls" Margin="0,8,0,12"
+                          AutomationProperties.Name="Preview simulation controls">
+                    <StackPanel>
+                    <ItemsControl ItemsSource="{Binding SimulationActions}"
+                                  AutomationProperties.Name="Simulated runner event actions">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Button Content="{Binding Label}" Command="{Binding Command}"
+                                        AutomationProperties.Name="{Binding AutomationName}" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <ItemsControl ItemsSource="{Binding FailureSimulationActions}"
+                                  AutomationProperties.Name="Simulated failure overlays">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Button Content="{Binding Label}" Command="{Binding Command}"
+                                        AutomationProperties.Name="{Binding AutomationName}" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    </StackPanel>
+                </Expander>
+            </StackPanel>
+
+            <Border Padding="12" BorderThickness="1" Margin="0,10,0,0"
+                    BorderBrush="{DynamicResource {x:Static SystemColors.ControlDarkBrushKey}}">
+                <StackPanel>
+                    <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap" FontWeight="SemiBold"
+                               AutomationProperties.Name="{Binding StatusText}"
+                               AutomationProperties.LiveSetting="Polite" />
+                    <TextBlock Text="{Binding ErrorTitle, StringFormat=Alert: {0}}" FontWeight="Bold"
+                               TextWrapping="Wrap" Margin="0,8,0,0"
+                               AutomationProperties.Name="{Binding ErrorTitle}"
+                               AutomationProperties.LiveSetting="Polite" />
+                    <TextBlock Text="{Binding ErrorWhatHappened}" TextWrapping="Wrap"
+                               AutomationProperties.Name="{Binding ErrorWhatHappened}" />
+                    <TextBlock Text="{Binding ErrorNextStep}" TextWrapping="Wrap"
+                               AutomationProperties.Name="{Binding ErrorNextStep}" />
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</Window>
