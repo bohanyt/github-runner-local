@@ -1,6 +1,6 @@
 # CURRENT — github-runner-local
 
-Updated: 2026-09-24. Phase: **A1_MERGED / B_IN_PROGRESS_UNDER_LEASE**.
+Updated: 2026-09-24. Phase: **B_IMPLEMENTED / AWAITING_INDEPENDENT_REVIEW**.
 
 ## Authority
 
@@ -9,11 +9,12 @@ Updated: 2026-09-24. Phase: **A1_MERGED / B_IN_PROGRESS_UNDER_LEASE**.
 - Owner authorization: Issue #1 comment `5809860108`.
 - Opus plan: Issue #2 comment `5807784901`.
 - CT plan review: Issue #2 comment `5807941253`.
-- Active task: Issue #8 — GRL-005 Checkpoint B WPF wizard shell with fake adapters.
+- Implemented task: Issue #8 — GRL-005 Checkpoint B WPF wizard shell with fake adapters.
 - Task mirror: `docs/tasks/GRL-005-b-wpf-shell.md`.
-- Active lease: `GRL-SOL-LEASE-A1-CLOSEOUT-B-20260924`, Issue #1 claim `5809865391`, expiring `2026-09-24T17:35:48Z` (soft cutoff `2026-09-24T15:35:48Z`).
-- Current handoff: `docs/control-tower/handoffs/GRL-20260924-A1-MERGED-B-ACTIVE-V6.md`.
-- Required sentinel: `END_OF_GRL_HANDOFF key=GRL-20260924-A1-MERGED-B-ACTIVE-V6 sections=8`.
+- Implementation handoff: Issue #8 comment `5810381568`.
+- Implementation lease: `GRL-SOL-LEASE-A1-CLOSEOUT-B-20260924`, Issue #1 claim `5809865391`; work concluded and release recorded on Issue #1 after this continuity transaction.
+- Current handoff: `docs/control-tower/handoffs/GRL-20260924-B-IMPLEMENTED-REVIEW-PENDING-V7.md`.
+- Required sentinel: `END_OF_GRL_HANDOFF key=GRL-20260924-B-IMPLEMENTED-REVIEW-PENDING-V7 sections=8`.
 
 ## A1 lineage and merge
 
@@ -28,7 +29,7 @@ Updated: 2026-09-24. Phase: **A1_MERGED / B_IN_PROGRESS_UNDER_LEASE**.
 
 ## Checkpoint B
 
-The authorized B task is Issue #8. It permits only a WPF shell using fake adapters and no live GitHub, auth, runner or OS integration. One implementation branch `feat/grl-b-wpf-shell` and one DRAFT PR will be published from the T1 continuity commit. Evidence ceiling: `LOCAL_CHECKED`. The implementing session does not review its own work.
+Issue #8 is implemented on `feat/grl-b-wpf-shell` from T1 `31d823604fa21fc755a1cfbf28e9db90ab8df8ec`. DRAFT PR #9 is open and unmerged at exact head `bbceeeeef111d1e5dcc62690c263a43f97b93ac6`, with 19 allowed changed paths. Issue #8 comment `5810381568` records the implementation and full local evidence. The fake-only solution build passed with zero warnings/errors; Core tests passed 192/192 and Presentation tests 42/42, each with zero failed/skipped. Fake-mode UIA smoke S1–S5 passed on one worker Windows desktop at one DPI. Evidence ceiling: `LOCAL_CHECKED`. The implementing session did not review its own work.
 
 ## Constraints
 
@@ -36,4 +37,4 @@ No GitHub-hosted Actions or workflow changes. No runner download/registration, G
 
 ## Next
 
-The lease holder implements GRL-005 and publishes one DRAFT PR. Independent exact-head review follows. No other writer should take GRL-005 while the lease is active.
+Owner/CT creates ONE independent exact-head review packet for PR #9 head `bbceeeeef111d1e5dcc62690c263a43f97b93ac6`. The implementing session must not review. PR #9 is not merge-authorized. Checkpoint C remains unauthorized.
