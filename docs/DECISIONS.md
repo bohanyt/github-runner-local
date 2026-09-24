@@ -1,6 +1,6 @@
 # Decision ledger
 
-Use `ACCEPTED` only for explicit owner direction or an approved decision. Technical proposals stay `PROPOSED` until reviewed. References describe platform facts, not product approval.
+Use `ACCEPTED` only for explicit owner direction or an approved technical decision. Technical proposals stay `PROPOSED` until reviewed. References describe platform facts, not product approval.
 
 | ID | State | Decision / question |
 |---|---|---|
@@ -8,19 +8,24 @@ Use `ACCEPTED` only for explicit owner direction or an approved decision. Techni
 | D02 | ACCEPTED | Windows GUI wizard; browser/device login; reusable across machines/accounts. |
 | D03 | ACCEPTED | One runner initially; no multi-runner installation in the initial scope. |
 | D04 | ACCEPTED | Prefer one local Documents folder on C:; do not silently use a redirected/synced folder. |
-| D05 | ACCEPTED | Explicit local UAC only for bounded administrative setup operations. |
+| D05 | ACCEPTED | Explicit local UAC only for bounded administrative setup operations; portable mode may legitimately need no UAC. |
 | D06 | ACCEPTED | GitHub request/result bridge; no direct chat-to-PC shell. |
-| D07 | ACCEPTED | Publish continuity + rough design, then independent Opus 5.5 planning. |
-| D08 | PROPOSED | Portable/manual runner mode first, service only after privilege/ACL design. |
-| D09 | OPEN | One-repository pilot versus private execution hub for multiple personal repositories. A label cannot expand registration scope. |
-| D10 | OPEN | GitHub CLI browser auth versus a separately registered OAuth/GitHub App; exact permissions and storage. |
-| D11 | OPEN | Native UI stack/runtime, supported Windows editions, distribution and update format. |
-| D12 | OPEN | Service identity, protected helper location, authenticated IPC and Documents preference conflict. |
-| D13 | PROPOSED | Authenticated issue-comment trigger through a private execution target; prove actual connector actor/event delivery. |
-| D14 | PROPOSED | Exact-SHA allowlisted test/build profiles; explicit structured result comments; no source write-back. |
+| D07 | ACCEPTED | Publish continuity + rough design, then independent Opus 5.5 planning. Completed by plan comment `5807784901`. |
+| D08 | ACCEPTED | Portable/trusted-code mode first; service/elevated-helper mode is deferred until after portable acceptance and a separate privilege/ACL review. |
+| D09 | OPEN | Dedicated private execution repo is the reviewed default, but owner approval is required before creation. Existing project repos are not silently reused. |
+| D10 | OPEN | GitHub App device-flow auth is the reviewed default; owner must approve App creation and acceptance-stage visibility. Public App visibility is not yet approved. |
+| D11 | PROPOSED | .NET 10 core now; WPF self-contained x64 shell is the reviewed later checkpoint-B direction, subject to Windows proof. |
+| D12 | OPEN | Service identity/protected helper location/ACLs remain deferred. No elevated helper may live in a job-writable path. |
+| D13 | PROPOSED | Authenticated issue-comment trigger in a later private execution repo; must prove actual connector event delivery and default-branch workflow behavior. |
+| D14 | PROPOSED | Exact-SHA allowlisted test/build profiles; explicit structured result comments; no source write-back. Branch containment is not a trust/sandbox guarantee. |
 | D15 | OPEN | License and code signing; no paid certificate or permissive license silently selected. |
 | D16 | SUPERSEDED | Three concurrent runners, terminal-first setup, and automatic all-repo routing. |
 | D17 | REJECTED | Public command inbox, raw shell commands from comments, UAC/policy bypass, or admin CI by default. |
+| D18 | ACCEPTED | Opus plan `5807784901` is accepted **for A1 only** with CT corrections in `5807941253`; later live checkpoints retain their gates/open decisions. |
+| D19 | ACCEPTED | Current operational constraint: **no GitHub-hosted Actions** until the owner explicitly re-enables them. A1 uses worker-local compute only. |
+| D20 | ACCEPTED | A1 Windows path policy must be host-independent explicit Windows semantics; Linux test success is only `LOCAL_CHECKED`. |
+| D21 | OPEN | Stage-2 multi-repo checkout credential/minting authority is not sufficiently designed for activation; first live acceptance must remain inside the private execution repo fixture. |
+| D22 | PROPOSED | Official runner initial package is pinned by reviewed digest, while default auto-update may later change the installed version; management operations must detect and gate unsupported versions rather than guess/downgrade. |
 
 ## Corrections to earlier exploratory conversation
 
@@ -30,3 +35,5 @@ Use `ACCEPTED` only for explicit owner direction or an approved decision. Techni
 - Normal Actions status/log publication is distinct from custom issue comments/artifacts and explicit source pushes.
 - A finished workflow does not itself resume an idle chat. Result reading and notifications need explicit supported integration.
 - Same-user credential encryption is storage protection, not isolation from that user's untrusted build processes.
+- Exact-SHA/branch-containment validation prevents stray refs; it does not make allowed code trustworthy.
+- A pinned initial runner plus default auto-update is not an end-to-end immutable runner version.
