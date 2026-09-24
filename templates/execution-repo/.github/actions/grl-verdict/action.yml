@@ -1,0 +1,12 @@
+name: GRL verdict
+description: Fail unless execution passed and publication completed
+inputs:
+  admitted:
+    required: false
+  execution-status:
+    required: false
+  reporting-complete:
+    required: false
+runs:
+  using: node20
+  main: main.mjs

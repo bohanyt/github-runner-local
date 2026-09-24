@@ -1,0 +1,8 @@
+name: GRL run profile
+description: Exact-SHA fixed-profile execution
+inputs:
+  identity-b64:
+    required: true
+runs:
+  using: node20
+  main: main.mjs

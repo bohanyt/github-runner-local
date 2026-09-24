@@ -1,0 +1,164 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/bohanyt/github-runner-local/schemas/grl.result.v1.schema.json",
+  "title": "GRL result v1 JSON payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "request_id", "request_comment_id", "request_body_sha256",
+    "execution_repo", "run", "workflow_sha", "profile", "target", "runner",
+    "timing", "checks", "execution_status", "disk", "artifacts", "logs", "report"
+  ],
+  "properties": {
+    "schema_version": { "const": "grl.result.v1" },
+    "request_id": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
+    "request_comment_id": { "type": "integer", "minimum": 1 },
+    "request_body_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "execution_repo": { "$ref": "#/$defs/repository" },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "attempt", "url"],
+      "properties": {
+        "id": { "type": "integer", "minimum": 1 },
+        "attempt": { "type": "integer", "minimum": 1 },
+        "url": { "type": "string", "format": "uri" }
+      }
+    },
+    "workflow_sha": { "$ref": "#/$defs/gitSha" },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "definition_sha"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$" },
+        "definition_sha": { "$ref": "#/$defs/gitSha" }
+      }
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "requested_sha", "tested_sha", "containing_branch", "branch_head_at_admission"],
+      "properties": {
+        "repository": { "$ref": "#/$defs/repository" },
+        "requested_sha": { "$ref": "#/$defs/gitSha" },
+        "tested_sha": { "$ref": "#/$defs/gitSha" },
+        "containing_branch": { "type": "string", "minLength": 1 },
+        "branch_head_at_admission": { "$ref": "#/$defs/gitSha" }
+      }
+    },
+    "runner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "os", "arch", "identity_class", "elevated"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 },
+        "os": { "const": "Windows" },
+        "arch": { "const": "X64" },
+        "identity_class": { "enum": ["portable-user", "service-account"] },
+        "elevated": { "type": "boolean" }
+      }
+    },
+    "timing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["admitted_at", "started_at", "finished_at", "phases"],
+      "properties": {
+        "admitted_at": { "$ref": "#/$defs/utcTime" },
+        "started_at": { "$ref": "#/$defs/utcTime" },
+        "finished_at": { "$ref": "#/$defs/utcTime" },
+        "phases": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "duration_s"],
+            "properties": {
+              "name": { "type": "string", "minLength": 1 },
+              "duration_s": { "type": "number", "minimum": 0 }
+            }
+          }
+        }
+      }
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "exit_code", "duration_s", "tests"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "exit_code": { "type": "integer" },
+          "duration_s": { "type": "number", "minimum": 0 },
+          "tests": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["passed", "failed", "skipped", "errored", "source"],
+            "properties": {
+              "passed": { "type": "integer", "minimum": 0 },
+              "failed": { "type": "integer", "minimum": 0 },
+              "skipped": { "type": "integer", "minimum": 0 },
+              "errored": { "type": "integer", "minimum": 0 },
+              "source": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    },
+    "execution_status": {
+      "enum": ["PASS", "FAIL", "BLOCKED", "CANCELLED", "TIMED_OUT", "EXPIRED", "REJECTED", "INTERRUPTED"]
+    },
+    "disk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["free_before_gib", "free_after_gib", "reserve_gib"],
+      "properties": {
+        "free_before_gib": { "type": "number", "minimum": 0 },
+        "free_after_gib": { "type": "number", "minimum": 0 },
+        "reserve_gib": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "url"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "url": { "type": "string", "format": "uri" }
+        }
+      }
+    },
+    "logs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["url"],
+      "properties": { "url": { "type": "string", "format": "uri" } }
+    },
+    "report": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attempts", "status_posted", "comment_posted"],
+      "properties": {
+        "attempts": { "type": "integer", "minimum": 1 },
+        "status_posted": { "type": "boolean" },
+        "comment_posted": { "type": "boolean" }
+      }
+    }
+  },
+  "$defs": {
+    "repository": {
+      "type": "string",
+      "pattern": "^[a-z0-9](?:[a-z0-9-]{0,37}[a-z0-9])?/[a-z0-9](?:[a-z0-9._-]{0,98}[a-z0-9])?$"
+    },
+    "gitSha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "utcTime": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{1,7})?Z$"
+    }
+  },
+  "$comment": "Cross-field PASS, exact-SHA, run URL, and observer-derived reporting checks are enforced by the C# validator."
+}

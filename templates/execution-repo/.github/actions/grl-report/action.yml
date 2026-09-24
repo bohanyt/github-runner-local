@@ -1,0 +1,16 @@
+name: GRL report
+description: Bounded canonical result or exact-SHA refusal publication
+inputs:
+  token:
+    required: true
+  mailbox-issue:
+    required: true
+  identity-b64:
+    required: true
+  result-b64:
+    required: false
+  outcome-b64:
+    required: false
+runs:
+  using: node20
+  main: main.mjs
