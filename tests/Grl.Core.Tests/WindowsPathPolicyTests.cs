@@ -87,6 +87,16 @@ public sealed class WindowsPathPolicyTests
             @"C:\Owned", @"C:\Owned\..\outside"));
     }
 
+    [Theory]
+    [InlineData(@"C:\", @"C:\")]
+    [InlineData(@"C:\", @"C:\Windows\System32")]
+    [InlineData(@"D:\", @"D:\work\repo")]
+    public void Bare_drive_root_is_not_an_owned_containment_boundary(
+        string ownedRoot, string candidate)
+    {
+        Assert.False(WindowsPathPolicy.IsWithinOwnedRoot(ownedRoot, candidate));
+    }
+
     [Fact]
     public void Redirected_and_synced_metadata_are_classified_from_fake_view()
     {

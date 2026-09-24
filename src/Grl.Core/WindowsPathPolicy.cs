@@ -57,7 +57,9 @@ public sealed class WindowsPathPolicy(IFileSystemView view)
     {
         try
         {
-            var root = NormalizeDriveAbsolute(ownedRoot).TrimEnd('\\');
+            var normalizedRoot = NormalizeDriveAbsolute(ownedRoot);
+            if (normalizedRoot.Length == 3) return false; // a drive root cannot be owned
+            var root = normalizedRoot.TrimEnd('\\');
             var child = NormalizeDriveAbsolute(candidate).TrimEnd('\\');
             return child.Equals(root, StringComparison.OrdinalIgnoreCase) ||
                 child.StartsWith(root + "\\", StringComparison.OrdinalIgnoreCase);
