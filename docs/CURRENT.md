@@ -1,18 +1,18 @@
 # CURRENT — github-runner-local
 
-Updated: 2026-09-24. Phase: **C_IMPLEMENTED / AWAITING_INDEPENDENT_EXACT_HEAD_REVIEW + E_LOCAL_TAKEOVER_READY**.
+Updated: 2026-09-25. Phase: **C_IMPLEMENTED / AWAITING_INDEPENDENT_EXACT_HEAD_REVIEW + E_RACE_RECONCILIATION_READY**.
 
 ## Authority
 
 - Canonical branch: `main`.
 - Control Tower: Issue #1.
 - Owner authorization for C source: Issue #1 comment `5811504614`.
-- Owner authorization for parallel E source/template: Issue #1 comment `5811700793`.
-- Owner transfer of E cloud → local: Issue #1 comment `5813834606`.
+- Owner authorization for E source/template: Issue #1 comment `5811700793`.
+- Owner cloud→local transfer: Issue #1 comment `5813834606`.
 - Opus plan: Issue #2 comment `5807784901`.
 - CT plan review: Issue #2 comment `5807941253`.
-- Current handoff: `docs/control-tower/handoffs/GRL-20260924-C-REVIEW-READY-E-LOCAL-TAKEOVER-V14.md`.
-- Required sentinel: `END_OF_GRL_HANDOFF key=GRL-20260924-C-REVIEW-READY-E-LOCAL-TAKEOVER-V14 sections=9`.
+- Current handoff: `docs/control-tower/handoffs/GRL-20260925-C-REVIEW-READY-E-RACE-RECONCILIATION-V15.md`.
+- Required sentinel: `END_OF_GRL_HANDOFF key=GRL-20260925-C-REVIEW-READY-E-RACE-RECONCILIATION-V15 sections=9`.
 
 ## Checkpoint C
 
@@ -21,76 +21,91 @@ Issue #10 / GRL-009 remains independently review-ready.
 DRAFT PR #12 exact head:
 `67dd220771bf67f65348e622998e005bf30b26bc`.
 
-Implementation handoff:
-Issue #10 comment `5813138169`.
-
 No C merge before independent PASS.
 
-## Checkpoint E transfer state
+## Checkpoint E race
 
 Issue #11 / GRL-010.
 
-Previous cloud implementation claim:
-`5812970520` — CANCELLED/REVOKED by owner transfer `5813834606`.
+Cancelled cloud claim:
+`5812970520`.
 
-Transfer publication:
-Issue #11 comment `5813835204`.
+Owner transfer:
+`5813834606`.
 
-Existing E branch:
-`feat/grl-e-execution-template`.
+Local takeover claim:
+`5813930109`, released blocked by `5814361882`.
 
-At transfer, that branch head was:
-`cd6f6abd13de9af2122d1c61db774b2dc54f7da0`.
+Blocked handoff:
+Issue #11 `5814358849`.
 
-It was identical to its base:
-- zero E source commits;
-- zero changed files;
-- no E PR;
-- no E implementation handoff.
+Unexpected remote E head:
+`e13f868be0c42f0327c530a03e2e4ac884e9da75`.
 
-A local Codex worker may reuse this existing empty branch after fresh-reading current authority and taking a NEW E implementation claim.
+That stale cloud commit:
+- appeared after claim revocation;
+- changes 31 paths, all under `templates/execution-repo/**`;
+- has no PR or implementation handoff;
+- is not automatically accepted or discarded.
 
-Any later publication from the cancelled cloud worker is stale unless explicitly reconciled by CT.
+Unpublished local candidate:
+`dbba8b3e25d38fc6a03d8981bc6bcbd3a52c940c`.
 
-## E source authority
+Local reported proof:
+- Node v24.14.1;
+- 87 passed / 0 skipped;
+- linter PASS;
+- schema mirrors PASS;
+- PASS/FAIL fixtures PASS;
+- E-B1 refusal proof PASS with zero profile processes;
+- 33 template paths.
 
-E still uses:
-- full Issue #11 packet through its 18-section sentinel;
-- CT scope correction `5811742857`;
-- E-B1 blocker `5811944203`;
-- CT protocol clarification `5812014790`;
-- D27 exact-SHA refusal semantics.
+## E reconciliation authority
 
-Absolute E feature-branch write scope:
+CT packet:
+Issue #11 `5823097901`.
+
+Decision D28 requires evidence-driven no-force reconciliation.
+
+One local Codex reconciliation worker must:
+- preserve both commits;
+- run the full proof campaign independently on BOTH exact candidates;
+- compare complete source against Issue #11 + `5811742857` + `5812014790`;
+- select or integrate the strongest compliant tree;
+- never force-push.
+
+If local/integrated tree is selected, publication uses a reconciliation merge:
+- first parent = current remote E head `e13f868...`;
+- second parent = selected local commit;
+- tree = exact selected local commit tree;
+- push is fast-forward on the canonical E branch.
+
+Absolute E source scope remains:
 `templates/execution-repo/**` ONLY.
 
-No root workflow/schema/Core/docs source changes are allowed on E branch.
+## E publication gate
 
-## E local proof
+No E PR/handoff exists yet.
 
-Local Codex may run the complete Node campaign:
-- Node built-in tests;
-- template linter;
-- PASS fixture;
-- FAIL fixture;
-- exact-SHA refusal path;
-- schema mirror check;
-- `git diff --check`.
+Final E candidate must have:
+- full Node tests;
+- linter;
+- schema mirror;
+- PASS/FAIL fixtures;
+- E-B1 refusal proof;
+- `git diff --check`;
+- exact template-only path proof.
 
-No Windows-specific proof is required for E.
-
-Evidence ceiling remains `LOCAL_CHECKED`.
+After publication, a different independent reviewer reviews E.
 
 ## Activation boundaries
 
-Still forbidden:
-- private execution repo creation/use;
-- copying/activating template into a live root workflow;
-- GitHub Actions dispatch;
-- runner registration/start;
-- connector-trigger live proof;
-- Stage-2 credentials;
-- D/G1/service/release work.
+No private execution repo.
+No root workflow activation.
+No Actions dispatch.
+No runner activation.
+No Stage-2 credentials.
+No D/G1/service/release work.
 
 ## Open gates
 
@@ -102,7 +117,7 @@ D15 license/signing: OPEN.
 
 ## Next
 
-One local Codex worker may take over E on the existing empty branch `feat/grl-e-execution-template`, post a fresh claim, implement the complete Issue #11 packet + both CT corrections, run local Node proof, publish one DRAFT PR + 9-section handoff, release, and stop.
+One local Codex worker claims the E reconciliation task, compares `e13f868...` and `dbba8b3...`, publishes the selected reconciled E candidate without force, creates one DRAFT PR + 9-section handoff, releases, and stops.
 
-In parallel, a separate reviewer may continue the exact-head C review.
+C review may proceed independently.
 
