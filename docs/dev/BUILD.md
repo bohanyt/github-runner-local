@@ -17,3 +17,19 @@ The first build may restore the xUnit test packages from NuGet. The test assembl
 - The valid request fixture is base64-encoded to preserve its exact LF envelope bytes and body digest across Windows Git line-ending conversion.
 
 The Windows path policy applies lexical Windows rules and consumes fake metadata through IFileSystemView; it performs no host filesystem operations or deletion. These A1 checks establish LOCAL_CHECKED core behavior only.
+
+## Checkpoint B
+
+The solution adds a framework-dependent x64 WPF preview app, a WPF-free presentation library, and presentation tests. The separate UI smoke console project is intentionally outside the solution. Build and test from the repository root with the .NET 10 SDK and WindowsDesktop runtime:
+
+```text
+dotnet --list-sdks
+dotnet --list-runtimes
+dotnet restore GitHubRunnerLocal.sln
+dotnet build GitHubRunnerLocal.sln -warnaserror
+dotnet test GitHubRunnerLocal.sln --no-restore
+dotnet test GitHubRunnerLocal.sln --no-restore --no-build
+dotnet build tests/Grl.App.UiSmoke/Grl.App.UiSmoke.csproj -warnaserror
+```
+
+The app is a preview with fake adapters and fictional data only. To inspect a scenario, run the built `GitHubRunnerLocal.exe` with `--scenario <Name>`; the default is `HappyPath`. The named scenarios and the UI smoke procedure are in [UI-SMOKE.md](UI-SMOKE.md). If .NET 10 was installed to a private tool directory, set both `DOTNET_ROOT` and `DOTNET_ROOT_X64` in the launching shell so the framework-dependent x64 app host finds that runtime. These checks establish `LOCAL_CHECKED` evidence only.
