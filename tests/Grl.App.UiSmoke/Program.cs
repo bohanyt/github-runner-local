@@ -14,8 +14,11 @@ internal static class Program
     private static readonly Dictionary<string, string> Results = new();
 
     [STAThread]
-    private static int Main()
+    private static int Main(string[] args)
     {
+        if (args.Length == 1 && args[0] == "--self-test-classifier")
+            return RunClassifierSelfTest();
+
         try
         {
             var root = RepositoryRoot();
@@ -33,7 +36,7 @@ internal static class Program
             AutomationElement? window = null;
             try
             {
-                (main, window) = Launch(exe, null);
+                (main, window) = Launch(exe, null, process => main = process);
                 WaitForText(window!, "Preview build", WaitSeconds);
                 Results["S1"] = "PASS";
                 Results["S4"] = AccessibleNames(window) ? "PASS" : "FAIL";
@@ -42,9 +45,11 @@ internal static class Program
                 CloseOwn(main!, window);
                 if (!main!.HasExited || main.ExitCode != 0) Results["S1"] = "FAIL";
             }
-            catch (Win32Exception error) when (error.NativeErrorCode == 740)
+            catch (Win32Exception error)
             {
-                Results["S1"] = "BLOCKED_APP_CONTROL";
+                Results["S1"] = ClassifyS1(error.NativeErrorCode, main is not null,
+                    main?.HasExited ?? false, window is not null,
+                    bannerPresent: false, Environment.UserInteractive);
                 Results["S2"] = "NOT_RUN";
                 Results["S4"] = "NOT_RUN";
                 Results["S3"] = "NOT_RUN";
@@ -54,7 +59,9 @@ internal static class Program
             catch (TimeoutException error)
             {
                 Console.WriteLine("S1 discovery: " + error.Message);
-                Results["S1"] = main is { HasExited: false } ? "BLOCKED_SESSION" : "BLOCKED_APP_CONTROL";
+                Results["S1"] = ClassifyS1(null, main is not null,
+                    main?.HasExited ?? false, window is not null,
+                    bannerPresent: false, Environment.UserInteractive);
                 Results["S2"] = "NOT_RUN";
                 Results["S4"] = "NOT_RUN";
                 Results["S3"] = "NOT_RUN";
@@ -225,7 +232,8 @@ internal static class Program
     private static bool WaitForFocusName(string name, int seconds) =>
         WaitUntil(() => AutomationElement.FocusedElement?.Current.Name == name, seconds);
 
-    private static (Process, AutomationElement) Launch(string exe, string? scenario)
+    private static (Process, AutomationElement) Launch(
+        string exe, string? scenario, Action<Process>? onStarted = null)
     {
         var start = new ProcessStartInfo(exe) { UseShellExecute = false };
         if (scenario is not null)
@@ -235,6 +243,7 @@ internal static class Program
         }
         var process = Process.Start(start) ?? throw new InvalidOperationException("App did not start.");
         Started.Add(process);
+        onStarted?.Invoke(process);
         AutomationElement? window = null;
         if (!WaitUntil(() =>
         {
@@ -318,5 +327,43 @@ internal static class Program
             Console.WriteLine($"{id}: {Results.GetValueOrDefault(id, "NOT_RUN")}");
         Console.WriteLine($"Elapsed seconds: {Campaign.Elapsed.TotalSeconds:F1}");
         return Results.Values.Any(status => status == "FAIL") ? 1 : 0;
+    }
+
+    private static string ClassifyS1(int? launchErrorCode, bool processStarted,
+        bool processExited, bool windowPresent, bool bannerPresent, bool sessionUsable)
+    {
+        // 740 is an app/manifest failure. Only recognized policy errors are app-control blocks.
+        if (launchErrorCode is 1260 or 4551) return "BLOCKED_APP_CONTROL";
+        if (launchErrorCode is not null) return "FAIL";
+        if (processStarted && processExited) return "FAIL";
+        if (!sessionUsable) return "BLOCKED_SESSION";
+        if (!processStarted || !windowPresent || !bannerPresent) return "FAIL";
+        return "PASS";
+    }
+
+    private static int RunClassifierSelfTest()
+    {
+        // This mode is deterministic and never resolves or launches the WPF executable.
+        var cases = new (string Name, string Expected, int? Error, bool Started,
+            bool Exited, bool Window, bool Banner, bool Session)[]
+        {
+            ("elevation required 740", "FAIL", 740, false, false, false, false, true),
+            ("policy blocked 1260", "BLOCKED_APP_CONTROL", 1260, false, false, false, false, true),
+            ("early process exit", "FAIL", null, true, true, false, false, true),
+            ("alive without window", "FAIL", null, true, false, false, false, true),
+            ("live window missing banner", "FAIL", null, true, false, true, false, true),
+            ("unusable interactive session", "BLOCKED_SESSION", null, true, false, false, false, false),
+            ("complete launch", "PASS", null, true, false, true, true, true)
+        };
+        var failures = 0;
+        foreach (var test in cases)
+        {
+            var actual = ClassifyS1(test.Error, test.Started, test.Exited,
+                test.Window, test.Banner, test.Session);
+            if (actual != test.Expected) failures++;
+            Console.WriteLine($"S1 classifier {test.Name}: {(actual == test.Expected ? "PASS" : "FAIL")}");
+        }
+        Console.WriteLine($"S1 classifier self-test: {cases.Length - failures}/{cases.Length} passed");
+        return failures == 0 ? 0 : 1;
     }
 }

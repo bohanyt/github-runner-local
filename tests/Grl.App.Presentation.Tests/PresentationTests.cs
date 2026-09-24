@@ -1,5 +1,8 @@
+using System.Reflection;
 using System.Reflection.Metadata;
+using System.Reflection.Metadata.Ecma335;
 using System.Reflection.PortableExecutable;
+using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using Grl.App.Presentation;
@@ -9,6 +12,24 @@ namespace Grl.App.Presentation.Tests;
 
 public sealed class PresentationTests
 {
+    private static readonly Regex ForbiddenMetadataType = new(
+        @"^(System\.Net(?:\.|$)|System\.IO(?:\.|$)|System\.Diagnostics\.Process(?:\.|$)|Microsoft\.Win32(?:\.|$)|System\.Security\.Principal(?:\.|$)|System\.Runtime\.InteropServices(?:\.|$)|System\.Windows\.(?!Input\.ICommand$))",
+        RegexOptions.CultureInvariant);
+
+    private static readonly Regex[] ForbiddenAppSourcePatterns =
+    [
+        new(@"\bSystem\.Net\b"), new(@"\bHttpClient\b"), new(@"\bWebClient\b"),
+        new(@"\bSocket\b"), new(@"\bProcess\b"), new(@"\bProcessStartInfo\b"),
+        new(@"\bRegistry\b"), new(@"\bDllImport\b"), new(@"\bLibraryImport\b"),
+        new(@"\bFile\s*\."), new(@"\bDirectory\s*\."), new(@"\bFileStream\b"),
+        new(@"\bStreamWriter\b"), new(@"\bGetFolderPath\b"),
+        new(@"\bSpecialFolder\b"), new(@"\bClipboard\b"),
+        new(@"\bNavigateUri\b"), new(@"\bRequestNavigate\b"),
+        new(@"\bOpenFileDialog\b"), new(@"\bSaveFileDialog\b"),
+        new(@"\bOpenFolderDialog\b"), new(@"\bShellExecute\b"),
+        new(@"\brunas\b"), new(@"\bWindowsIdentity\b")
+    ];
+
     private static readonly WizardEvent[] UserEvents =
     [
         WizardEvent.Cancel, WizardEvent.Retry, WizardEvent.Continue,
@@ -182,52 +203,64 @@ public sealed class PresentationTests
     {
         using var file = File.OpenRead(typeof(WizardSession).Assembly.Location);
         using var pe = new PEReader(file);
-        var metadata = pe.GetMetadataReader();
-        var references = metadata.AssemblyReferences.Select(handle =>
-            metadata.GetString(metadata.GetAssemblyReference(handle).Name)).ToArray();
-        Assert.DoesNotContain(references, name =>
-            name is "PresentationFramework" or "PresentationCore" or "WindowsBase" or
-                "System.Windows.Forms" or "Microsoft.Win32.Registry" or "System.Management");
-        var forbidden = new Regex(@"^(System\.Net|System\.IO|System\.Diagnostics\.Process|Microsoft\.Win32|System\.Security\.Principal|System\.Runtime\.InteropServices|System\.Windows\.(?!Input\.ICommand))");
-        foreach (var handle in metadata.TypeReferences)
-        {
-            var type = metadata.GetTypeReference(handle);
-            var qualified = metadata.GetString(type.Namespace) + "." + metadata.GetString(type.Name);
-            Assert.DoesNotMatch(forbidden, qualified);
-        }
-        foreach (var handle in metadata.MemberReferences)
-        {
-            var member = metadata.GetMemberReference(handle);
-            if (member.Parent.Kind != HandleKind.TypeReference) continue;
-            var type = metadata.GetTypeReference((TypeReferenceHandle)member.Parent);
-            var qualified = metadata.GetString(type.Namespace) + "." + metadata.GetString(type.Name);
-            Assert.DoesNotMatch(forbidden, qualified);
-        }
+        Assert.Empty(ForbiddenMetadataFindings(pe.GetMetadataReader()));
     }
 
     [Fact]
     public void AppSourceHasNoLiveOperationCalls()
     {
-        var root = RepositoryRoot();
-        var files = Directory.GetFiles(Path.Combine(root, "src", "Grl.App"), "*.*", SearchOption.TopDirectoryOnly)
-            .Where(path => path.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) ||
-                           path.EndsWith(".xaml", StringComparison.OrdinalIgnoreCase));
-        foreach (var file in files)
+        var appRoot = Path.Combine(RepositoryRoot(), "src", "Grl.App");
+        Assert.Empty(ForbiddenAppSourceFindings(appRoot,
+            Directory.EnumerateFiles, File.ReadAllText));
+    }
+
+    [Fact]
+    public void MetadataGuardDetectsNativeImportAndKnownFolderSentinels()
+    {
+        // These declarations are metadata sentinels only; neither method is ever called.
+        using var file = File.OpenRead(typeof(PresentationTests).Assembly.Location);
+        using var pe = new PEReader(file);
+        var findings = ForbiddenMetadataFindings(pe.GetMetadataReader());
+        Assert.Contains(findings, finding => finding.StartsWith("PInvoke method ", StringComparison.Ordinal));
+        Assert.Contains(findings, finding => finding.StartsWith("Native module ", StringComparison.Ordinal));
+        Assert.Contains(findings, finding => finding == "Forbidden member System.Environment.GetFolderPath");
+        Assert.Contains(findings, finding => finding == "Forbidden type System.Environment.SpecialFolder");
+    }
+
+    [Fact]
+    public void SourceGuardRecursesIntoNestedAppFilesAndSkipsGeneratedOutput()
+    {
+        var root = "virtual-app-root";
+        var nested = Path.Combine(root, "Views", "Fault.xaml.cs");
+        var generatedBin = Path.Combine(root, "bin", "Generated.cs");
+        var generatedObj = Path.Combine(root, "Views", "obj", "Generated.xaml");
+        var sources = new Dictionary<string, string>
         {
-            var source = File.ReadAllText(file);
-            foreach (var forbidden in new[]
+            [nested] = "Process.Start(\"never-executed\");",
+            [generatedBin] = "Process.Start(\"generated\");",
+            [generatedObj] = "Process.Start(\"generated\");"
+        };
+        var findings = ForbiddenAppSourceFindings(root,
+            (path, pattern, option) =>
             {
-                @"\bSystem\.Net\b", @"\bHttpClient\b", @"\bWebClient\b", @"\bSocket\b",
-                @"\bProcess\b", @"\bProcessStartInfo\b", @"\bRegistry\b",
-                @"\bDllImport\b", @"\bLibraryImport\b", @"\bFile\s*\.",
-                @"\bDirectory\s*\.", @"\bFileStream\b", @"\bStreamWriter\b",
-                @"\bGetFolderPath\b", @"\bSpecialFolder\b", @"\bClipboard\b",
-                @"\bNavigateUri\b", @"\bRequestNavigate\b", @"\bOpenFileDialog\b",
-                @"\bSaveFileDialog\b", @"\bOpenFolderDialog\b", @"\bShellExecute\b",
-                @"\brunas\b", @"\bWindowsIdentity\b"
-            })
-                Assert.DoesNotMatch(new Regex(forbidden), source);
-        }
+                Assert.Equal(root, path);
+                Assert.Equal("*", pattern);
+                Assert.Equal(SearchOption.AllDirectories, option);
+                return sources.Keys;
+            },
+            path => sources[path]);
+        Assert.Single(findings);
+        Assert.Contains("Views/Fault.xaml.cs", findings[0]);
+        Assert.DoesNotContain(findings, finding => finding.Contains("Generated", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ICommandExceptionDoesNotAdmitOtherWindowsTypes()
+    {
+        Assert.False(IsForbiddenMetadataType("System.Windows.Input.ICommand"));
+        Assert.True(IsForbiddenMetadataType("System.Windows.Input.Keyboard"));
+        Assert.True(IsForbiddenMetadataType("System.Windows.Input.ICommandExtra"));
+        Assert.True(IsForbiddenMetadataType("System.Windows.Controls.Button"));
     }
 
     [Fact]
@@ -310,6 +343,91 @@ public sealed class PresentationTests
         FakeScenario scenario = FakeScenario.HappyPath) =>
         new(new ScenarioSelection(scenario, string.Empty), new FakeClock(),
             new PreviewDelay(TimeSpan.Zero), WizardAdapters.CreateFake(), state);
+
+    [DllImport("grl-test-only-native-sentinel")]
+    private static extern int NativeImportSentinel();
+
+    private static string KnownFolderSentinel() =>
+        Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+
+    private static bool IsForbiddenMetadataType(string qualifiedName) =>
+        ForbiddenMetadataType.IsMatch(qualifiedName) ||
+        qualifiedName is "System.Environment.SpecialFolder";
+
+    private static IReadOnlyList<string> ForbiddenMetadataFindings(MetadataReader metadata)
+    {
+        var findings = new List<string>();
+        foreach (var handle in metadata.AssemblyReferences)
+        {
+            var name = metadata.GetString(metadata.GetAssemblyReference(handle).Name);
+            if (name is "PresentationFramework" or "PresentationCore" or "WindowsBase" or
+                "System.Windows.Forms" or "Microsoft.Win32.Registry" or "System.Management")
+                findings.Add("Forbidden assembly " + name);
+        }
+        for (var row = 1; row <= metadata.GetTableRowCount(TableIndex.ModuleRef); row++)
+        {
+            var handle = MetadataTokens.ModuleReferenceHandle(row);
+            findings.Add("Native module " + metadata.GetString(metadata.GetModuleReference(handle).Name));
+        }
+        foreach (var handle in metadata.MethodDefinitions)
+        {
+            var method = metadata.GetMethodDefinition(handle);
+            if ((method.Attributes & MethodAttributes.PinvokeImpl) != 0 ||
+                !method.GetImport().Module.IsNil)
+                findings.Add("PInvoke method " + metadata.GetString(method.Name));
+        }
+        foreach (var handle in metadata.TypeReferences)
+        {
+            var qualified = QualifiedTypeName(metadata, handle);
+            if (IsForbiddenMetadataType(qualified))
+                findings.Add("Forbidden type " + qualified);
+        }
+        foreach (var handle in metadata.MemberReferences)
+        {
+            var member = metadata.GetMemberReference(handle);
+            if (member.Parent.Kind != HandleKind.TypeReference) continue;
+            var qualified = QualifiedTypeName(metadata, (TypeReferenceHandle)member.Parent);
+            var name = metadata.GetString(member.Name);
+            if (IsForbiddenMetadataType(qualified) ||
+                (qualified == "System.Environment" && name == "GetFolderPath"))
+                findings.Add("Forbidden member " + qualified + "." + name);
+        }
+        return findings;
+    }
+
+    private static string QualifiedTypeName(MetadataReader metadata, TypeReferenceHandle handle)
+    {
+        var type = metadata.GetTypeReference(handle);
+        var name = metadata.GetString(type.Name);
+        if (type.ResolutionScope.Kind == HandleKind.TypeReference)
+            return QualifiedTypeName(metadata, (TypeReferenceHandle)type.ResolutionScope) + "." + name;
+        var space = metadata.GetString(type.Namespace);
+        return string.IsNullOrEmpty(space) ? name : space + "." + name;
+    }
+
+    private static IReadOnlyList<string> ForbiddenAppSourceFindings(
+        string root,
+        Func<string, string, SearchOption, IEnumerable<string>> discover,
+        Func<string, string> read)
+    {
+        var findings = new List<string>();
+        foreach (var path in discover(root, "*", SearchOption.AllDirectories))
+        {
+            var relative = Path.GetRelativePath(root, path).Replace('\\', '/');
+            var segments = relative.Split('/');
+            if (segments.Any(segment => segment.Equals("bin", StringComparison.OrdinalIgnoreCase) ||
+                                        segment.Equals("obj", StringComparison.OrdinalIgnoreCase)))
+                continue;
+            if (!path.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) &&
+                !path.EndsWith(".xaml", StringComparison.OrdinalIgnoreCase))
+                continue;
+            var source = read(path);
+            foreach (var forbidden in ForbiddenAppSourcePatterns)
+                if (forbidden.IsMatch(source))
+                    findings.Add(relative + ": " + forbidden);
+        }
+        return findings;
+    }
 
     private static string RepositoryRoot()
     {
