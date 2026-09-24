@@ -1,6 +1,6 @@
 # CURRENT — github-runner-local
 
-Updated: 2026-09-24. Phase: **A1_IMPLEMENTED / AWAITING_INDEPENDENT_EXACT_HEAD_REVIEW**.
+Updated: 2026-09-24. Phase: **A1_CORRECTED / AWAITING_EXACT_HEAD_REREVIEW**.
 
 ## Authority
 
@@ -8,36 +8,46 @@ Updated: 2026-09-24. Phase: **A1_IMPLEMENTED / AWAITING_INDEPENDENT_EXACT_HEAD_R
 - Control Tower: Issue #1.
 - Opus plan: Issue #2 comment `5807784901`.
 - CT plan review: Issue #2 comment `5807941253`.
-- A1 implementation: Issue #4 handoff `5808741650`.
-- Implementation claim released: Issue #1 comment `5808748533`.
-- DRAFT PR #5: branch `feat/grl-a1-core-contracts`, exact head `ae2e23a156695f19d9511736a7758b53d4a1406c`, base `3e02566f5dcaeea01f5f34284e21731c71b1144b`.
-- Active task: Issue #6 — GRL-003 independent exact-head review.
-- Task mirror: `docs/tasks/GRL-003-a1-exact-head-review.md`.
-- Current handoff: `docs/control-tower/handoffs/GRL-20260924-A1-REVIEW-READY-V4.md`.
-- Required end marker: `END_OF_GRL_HANDOFF key=GRL-20260924-A1-REVIEW-READY-V4 sections=8`.
+- A1 implementation handoff: Issue #4 comment `5808741650`.
+- Independent review: Issue #4 comment `5809108582` → `NEEDS_A1_CORRECTION`.
+- Correction handoff: Issue #4 comment `5809246654`.
+- Correction claim released: Issue #1 comment `5809250270`.
+- SAME DRAFT PR #5 corrected head: `e21599eda1d4c40c391c2d34546e616e59645144`.
+- Base remains: `3e02566f5dcaeea01f5f34284e21731c71b1144b`.
+- Active task: Issue #7 — GRL-004 exact-head rereview of R-A1-1 correction.
+- Task mirror: `docs/tasks/GRL-004-a1-correction-rereview.md`.
+- Current handoff: `docs/control-tower/handoffs/GRL-20260924-A1-CORRECTION-REREVIEW-READY-V5.md`.
+- Required sentinel: `END_OF_GRL_HANDOFF key=GRL-20260924-A1-CORRECTION-REREVIEW-READY-V5 sections=7`.
 
-## A1 evidence
+## Correction state
 
-Worker-local Windows proof at head `ae2e23a...`:
+R-A1-1 was corrected on SAME branch/PR. Only:
+- `src/Grl.Core/WindowsPathPolicy.cs`
+- `tests/Grl.Core.Tests/WindowsPathPolicyTests.cs`
+
+changed after the reviewed head.
+
+Worker-local Windows proof at corrected head:
 - .NET SDK 10.0.401;
 - `dotnet build -warnaserror`: PASS, 0 warnings/errors;
-- `dotnet test`: 189/189 PASS, 0 skipped;
-- `dotnet test --no-restore --no-build`: 189/189 PASS.
+- `dotnet test`: 192/192 PASS, 0 skipped.
 
 Evidence remains `LOCAL_CHECKED`.
 
-## Exact review target
+## Exact rereview target
 
-Review **only** PR #5 head:
+Review ONLY corrected PR #5 head:
 
-`ae2e23a156695f19d9511736a7758b53d4a1406c`
+`e21599eda1d4c40c391c2d34546e616e59645144`
 
-against Issue #4 and CT corrections `5807941253`. If that head changes, stop as stale rather than reviewing a moving target.
+against original finding R-A1-1 and correction handoff `5809246654`.
+
+The rereviewer may reuse prior review conclusions for unaffected files. If the PR head moves, stop as stale.
 
 ## Constraints
 
-No GitHub-hosted Actions. Review is read-only except claim/review/release comments. No source edits, PR edits, merge, runner/App/execution-repo/UAC/service/machine change, or later checkpoint work.
+No GitHub-hosted Actions. Rereview is read-only except claim/result/release comments. No source/PR edits, merge, later checkpoint work, runner/App/execution-repo/UAC/service/machine changes.
 
 ## Next
 
-One independent reviewer, distinct from CT and the A1 implementation worker, may claim Issue #6, review the full exact-head diff/files, post one verdict on Issue #4, release the claim, and stop.
+One independent reviewer may claim Issue #7, perform the bounded correction rereview, post one result on Issue #4, release the claim, and stop.
