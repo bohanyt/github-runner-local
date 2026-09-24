@@ -1,63 +1,58 @@
 # CURRENT — github-runner-local
 
-Updated: 2026-09-24. Phase: **B_CORRECTED / AWAITING_INDEPENDENT_EXACT_HEAD_REREVIEW**.
+Updated: 2026-09-24. Phase: **B_MERGED / C_SOURCE_READY**.
 
 ## Authority
 
 - Canonical branch: `main`.
 - Control Tower: Issue #1.
-- Owner authorization: Issue #1 comment `5809860108`.
+- Owner authorization for B merge + C source: Issue #1 comment `5811504614`.
 - Opus plan: Issue #2 comment `5807784901`.
 - CT plan review: Issue #2 comment `5807941253`.
-- Active task: Issue #8 — GRL-005 Checkpoint B WPF wizard shell with fake adapters.
-- Implementation handoff: Issue #8 comment `5810381568`.
-- Independent B review: Issue #8 comment `5811022199` → `NEEDS_B_CORRECTION` (R-B-1, R-B-2).
-- Correction packet: Issue #8 comment `5811157965`.
-- Correction handoff: Issue #8 comment `5811298851`.
-- Correction claim released: Issue #1 comment `5811303475`.
-- Current handoff: `docs/control-tower/handoffs/GRL-20260924-B-CORRECTED-REREVIEW-READY-V9.md`.
-- Required sentinel: `END_OF_GRL_HANDOFF key=GRL-20260924-B-CORRECTED-REREVIEW-READY-V9 sections=7`.
+- Active task: Issue #10 — GRL-009 Checkpoint C source: device flow, runner pin/package, CLI contract.
+- Task mirror: `docs/tasks/GRL-009-c-source.md`.
+- Current handoff: `docs/control-tower/handoffs/GRL-20260924-B-MERGED-C-SOURCE-READY-V10.md`.
+- Required sentinel: `END_OF_GRL_HANDOFF key=GRL-20260924-B-MERGED-C-SOURCE-READY-V10 sections=8`.
 
-## Candidate
+## Checkpoint B completion
 
-- SAME branch: `feat/grl-b-wpf-shell`
-- SAME DRAFT PR #9: open, unmerged
-- Base: `31d823604fa21fc755a1cfbf28e9db90ab8df8ec`
-- Old reviewed head: `bbceeeeef111d1e5dcc62690c263a43f97b93ac6`
-- New corrected head: `7b7472f910ae54e2de813f90d7d5fa3a60d5f218`
-- Correction delta: exactly two files:
-  - `tests/Grl.App.Presentation.Tests/PresentationTests.cs`
-  - `tests/Grl.App.UiSmoke/Program.cs`
+- Original B implementation: Issue #8 comment `5810381568`.
+- First independent review: `5811022199` → `NEEDS_B_CORRECTION`, R-B-1/R-B-2.
+- Correction: `5811298851`.
+- Independent correction rereview: `5811461145` → `PASS_B_CORRECTION_EXACT_HEAD`, findings=0.
+- Exact reviewed B head: `7b7472f910ae54e2de813f90d7d5fa3a60d5f218`.
+- PR #9 merged by merge commit `09c87d00e1741083db000ec21220b34841606310`; parents are prior main `5d7b7af8e4dce2509fc50d5150cb8339b87ef067` and reviewed B head.
+- Merge diff from prior main is exactly the 19 B paths.
+- Issue #8 closeout comment: `5811549859`; Issue #8 is completed/closed.
+- Final B evidence remains `LOCAL_CHECKED`: Core 192/192, Presentation 45/45, classifier self-test 7/7, UI smoke S1–S5 PASS.
 
-## Correction evidence
+## Checkpoint C authority
 
-Local non-elevated Windows proof at corrected head:
-- build PASS, 0 warnings/errors
-- Grl.Core.Tests: 192/192, 0 skipped
-- Grl.App.Presentation.Tests: 45/45, 0 skipped
-- UiSmoke classifier self-test: 7/7
-- fake-mode UIA smoke S1–S5: PASS
-- diff scope: exactly two authorized files
-- `git diff --check`: clean
+D25 authorizes source-only C under Issue #10.
 
-Evidence remains `LOCAL_CHECKED`.
+C may implement:
+- injected/mockable GitHub App device-flow and REST adapter;
+- official runner pin/download/SHA-256/safe staged extraction;
+- runner CLI version/capability contracts;
+- deterministic tests and a bounded Windows runner contract probe.
 
-## Rereview scope
+C must NOT perform live App/login/runner activation.
 
-Independent rereview should be bounded to:
-- exact old→new correction diff
-- full corrected versions of the two changed files
-- whether R-B-1 and R-B-2 are truly closed
-- whether the correction introduced any new blocking defect
+## Open gates
 
-Prior independent conclusions for unaffected product/UI architecture may be reused.
+Still OPEN:
+- D09 / OD-1: create dedicated private execution repo;
+- D10 / OD-2: create GitHub App and choose acceptance-stage visibility;
+- D21: stage-2 multi-repo credential authority;
+- D12: service identity/elevated helper;
+- D15: license/signing.
 
-If PR #9 head moves from `7b7472f910ae54e2de813f90d7d5fa3a60d5f218`, stop stale.
+Checkpoint D, execution-template activation, G1, service mode and release remain unauthorized.
 
 ## Constraints
 
-No merge. No self-rereview by the correction worker. No hosted Actions. No Checkpoint C. No product/Core/workflow/authority changes on PR #9. PR #3 remains untouched.
+No GitHub-hosted Actions. No repository-setting changes. No runner registration/start. No live device flow. No private execution repo. No service/UAC/policy/security/power changes. PR #3 remains untouched.
 
 ## Next
 
-One independent reviewer rereviews exact PR #9 head `7b7472f910ae54e2de813f90d7d5fa3a60d5f218`, publishes one verdict on Issue #8, releases its claim on Issue #1, then stops. PASS is required before any merge decision.
+One bounded local implementation worker may claim GRL-009, branch from current main on `feat/grl-c-device-runner-package`, execute Issue #10 through its end marker, publish one DRAFT PR and implementation handoff, release the claim, and stop. Independent exact-head review follows.

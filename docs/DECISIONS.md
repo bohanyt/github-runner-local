@@ -28,6 +28,7 @@ Use `ACCEPTED` only for explicit owner direction or an approved technical decisi
 | D22 | PROPOSED | Official runner initial package is pinned by reviewed digest, while default auto-update may later change the installed version; management operations must detect and gate unsupported versions rather than guess/downgrade. |
 | D23 | ACCEPTED | Owner authorizes Checkpoint B per GRL-005 (#8): .NET 10 WPF `net10.0-windows` x64 framework-dependent wizard shell with fake adapters only; no live GitHub/auth/runner/OS-probe/process/network behavior. Source: Issue #1 comment `5809860108`. D11 self-contained packaging remains PROPOSED. |
 | D24 | ACCEPTED | Evidence labels for Checkpoint B: headless tests and fake-mode UI automation smoke on a worker Windows desktop are `LOCAL_CHECKED` (with qualifier). `WINDOWS_TESTED` is reserved for real-integration acceptance (G1 and gated live checkpoints). Source: Issue #1 comment `5809860108`. |
+| D25 | ACCEPTED | Owner authorizes Checkpoint C **source-only** implementation per GRL-009 (#10): injected/mockable GitHub device-flow/REST adapter, reviewed runner pin/download/hash/safe-extraction pipeline, and runner CLI capability contracts with local Windows contract probe. No GitHub App creation/visibility choice, live login, execution repo, runner registration/start, D/E activation, hosted Actions, service/UAC or release work. Source: Issue #1 comment `5811504614`. OD-1 and OD-2 remain OPEN. |
 
 ## Corrections to earlier exploratory conversation
 
