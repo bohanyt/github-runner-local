@@ -1,0 +1,32 @@
+# Local runtime / downloaded runner material (never source)
+/runtime/
+/local-state/
+/downloads/
+/_work/
+/_diag/
+**/.credentials*
+**/.runner
+**/.service
+**/.env
+**/.env.*
+!**/.env.example
+*.pem
+*.pfx
+*.p12
+*.key
+*.zip
+*.exe
+*.dll
+*.msi
+*.msix
+# Build and tool outputs
+**/bin/
+**/obj/
+**/__pycache__/
+*.pyc
+/artifacts/
+/local-evidence/
+# User/editor state
+.vs/
+.idea/
+.DS_Store
