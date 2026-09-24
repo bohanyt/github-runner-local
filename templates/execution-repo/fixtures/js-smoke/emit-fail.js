@@ -1,0 +1,1 @@
+const fs=require('node:fs');const path=require('node:path');const p=process.argv[2]||'results/fail.xml';fs.mkdirSync(path.dirname(p),{recursive:true});fs.writeFileSync(p,'<testsuite tests="2" failures="1" errors="0" skipped="0"><testcase name="a"/><testcase name="b"><failure/></testcase></testsuite>\n');console.error('fixture intentional failure');process.exitCode=1;

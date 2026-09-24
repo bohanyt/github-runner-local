@@ -1,0 +1,12 @@
+name: grl-report
+description: Publish canonical result or bounded exact-SHA refusal
+inputs:
+  token: {required: true}
+  outcome-dir: {required: true}
+outputs:
+  execution-status: {description: "execution-status"}
+  status-posted: {description: "status-posted"}
+  comment-posted: {description: "comment-posted"}
+runs:
+  using: node20
+  main: index.js

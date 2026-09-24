@@ -1,0 +1,11 @@
+{
+  "id": "js-smoke-pass",
+  "version": "1",
+  "max_timeout_minutes": 5,
+  "min_tests": 1,
+  "estimated_disk_gib": 0.01,
+  "required_tools": ["git"],
+  "steps": [
+    {"name":"node-smoke-pass","executable":"@node","argv":["fixtures/js-smoke/emit-pass.js","results/pass.xml"],"timeout_seconds":30,"parser":{"type":"junit","path":"results/pass.xml"}}
+  ]
+}

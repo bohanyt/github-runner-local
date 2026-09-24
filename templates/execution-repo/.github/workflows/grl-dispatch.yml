@@ -1,0 +1,140 @@
+name: GRL dispatch
+on:
+  issue_comment:
+    types: [created]
+permissions: {}
+
+jobs:
+  admit:
+    if: >-
+      github.event.issue.number == fromJSON(vars.GRL_MAILBOX_ISSUE) &&
+      github.event.issue.pull_request == null &&
+      contains(fromJSON(vars.GRL_AUTHORIZED_ACTORS), github.event.comment.user.login) &&
+      github.event.comment.author_association == 'OWNER' &&
+      startsWith(github.event.comment.body, '<!-- grl-request v1 -->')
+    runs-on: [self-hosted, Windows, X64, grl-exec]
+    permissions:
+      contents: read
+      issues: write
+      actions: read
+      statuses: read
+    outputs:
+      admitted: ${{ steps.admit.outputs.admitted }}
+      request-json: ${{ steps.admit.outputs.request-json }}
+      request-body-sha256: ${{ steps.admit.outputs.request-body-sha256 }}
+      containing-branch: ${{ steps.admit.outputs.containing-branch }}
+      branch-head-at-admission: ${{ steps.admit.outputs.branch-head-at-admission }}
+      admitted-at: ${{ steps.admit.outputs.admitted-at }}
+      runner-json: ${{ steps.admit.outputs.runner-json }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - id: admit
+        uses: ./.github/actions/grl-admit
+        with:
+          token: ${{ github.token }}
+          comment-body: ${{ github.event.comment.body }}
+          comment-id: ${{ github.event.comment.id }}
+          comment-created-at: ${{ github.event.comment.created_at }}
+          allowed-branches: ${{ vars.GRL_ALLOWED_BRANCHES }}
+          authorized-actors: ${{ vars.GRL_AUTHORIZED_ACTORS }}
+          disk-reserve-gib: ${{ vars.GRL_DISK_RESERVE_GIB }}
+
+  execute:
+    needs: [admit]
+    if: needs.admit.outputs.admitted == 'true'
+    runs-on: [self-hosted, Windows, X64, grl-exec]
+    permissions:
+      contents: read
+    outputs:
+      execution-status: ${{ steps.run.outputs.execution-status }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          path: .grl/workflow
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ fromJSON(needs.admit.outputs.request-json).target.sha }}
+          path: target
+          persist-credentials: false
+      - id: run
+        uses: ./.grl/workflow/.github/actions/grl-run-profile
+        with:
+          request-json: ${{ needs.admit.outputs.request-json }}
+          request-body-sha256: ${{ needs.admit.outputs.request-body-sha256 }}
+          request-comment-id: ${{ github.event.comment.id }}
+          containing-branch: ${{ needs.admit.outputs.containing-branch }}
+          branch-head-at-admission: ${{ needs.admit.outputs.branch-head-at-admission }}
+          admitted-at: ${{ needs.admit.outputs.admitted-at }}
+          runner-json: ${{ needs.admit.outputs.runner-json }}
+          disk-reserve-gib: ${{ vars.GRL_DISK_RESERVE_GIB }}
+          target-dir: target
+          profile-dir: .grl/workflow/profiles
+          output-dir: .grl/outcome
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: grl-execution-outcome-${{ github.run_id }}
+          path: .grl/outcome
+          retention-days: 3
+          if-no-files-found: error
+          overwrite: true
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: steps.run.outputs.execution-status == 'BLOCKED'
+        with:
+          name: grl-exec-refusal-${{ github.run_id }}
+          path: .grl/outcome/refusal.marker
+          retention-days: 3
+          if-no-files-found: error
+          overwrite: true
+
+  report:
+    needs: [admit, execute]
+    if: always() && needs.admit.outputs.admitted == 'true' && needs.execute.result != 'skipped'
+    runs-on: [self-hosted, Windows, X64, grl-exec]
+    permissions:
+      contents: read
+      issues: write
+      statuses: write
+      actions: read
+    outputs:
+      execution-status: ${{ steps.report.outputs.execution-status }}
+      status-posted: ${{ steps.report.outputs.status-posted }}
+      comment-posted: ${{ steps.report.outputs.comment-posted }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          path: .grl/workflow
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: grl-execution-outcome-${{ github.run_id }}
+          path: .grl/outcome
+      - id: report
+        uses: ./.grl/workflow/.github/actions/grl-report
+        with:
+          token: ${{ github.token }}
+          outcome-dir: .grl/outcome
+
+  verdict:
+    needs: [admit, execute, report]
+    if: always() && needs.admit.outputs.admitted == 'true'
+    runs-on: [self-hosted, Windows, X64, grl-exec]
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          path: .grl/workflow
+          persist-credentials: false
+      - uses: ./.grl/workflow/.github/actions/grl-verdict
+        with:
+          execution-status: ${{ needs.report.outputs.execution-status || needs.execute.outputs.execution-status || 'INTERRUPTED' }}
+          status-posted: ${{ needs.report.outputs.status-posted || 'false' }}
+          comment-posted: ${{ needs.report.outputs.comment-posted || 'false' }}

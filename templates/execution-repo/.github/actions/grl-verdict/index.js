@@ -1,0 +1,1 @@
+const {verdict}=require('../../../lib/reporting');const i=n=>process.env[`INPUT_${n.toUpperCase().replaceAll('-','_')}`];const v=verdict({executionStatus:i('execution-status'),statusPosted:i('status-posted')==='true',commentPosted:i('comment-posted')==='true'});if(!v.pass){console.error(v.code);process.exitCode=1}else console.log('PASS');
