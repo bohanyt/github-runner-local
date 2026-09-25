@@ -447,6 +447,153 @@ public sealed class PortableLifecycleTests
     }
 
     [Fact]
+    public async Task PostConfigureIdentityPollRetriesTransientAndAbsenceBeforeStarting()
+    {
+        var admin = new FakeAdmin
+        {
+            Lists = Pages([], [], [Runner(1, false)], [Runner(1, true)])
+        };
+        admin.FailListCalls.Add(2);
+        var process = new FakeProcess();
+        using var lifecycle = NewLifecycle(admin, process);
+
+        await lifecycle.RegisterAndStartAsync(3, TimeSpan.Zero, default);
+
+        Assert.Equal(PortableRunnerState.Online, lifecycle.State);
+        Assert.Equal(1, lifecycle.RunnerId);
+        Assert.Equal(1, process.StartCount);
+        Assert.Equal(1, process.VerifyCount);
+        Assert.True(admin.ListCalls >= 4);
+    }
+
+    [Fact]
+    public async Task ConfigureFailureWithUnknownIdCanReresolveAndRecover()
+    {
+        var admin = new FakeAdmin { Lists = Pages([], [], [Runner(42, false)], [Runner(42, false)], []) };
+        var process = new FakeProcess { FailConfigure = true };
+        using var lifecycle = NewLifecycle(admin, process);
+
+        await Assert.ThrowsAsync<RunnerProcessException>(() =>
+            lifecycle.RegisterAndStartAsync(1, TimeSpan.Zero, default));
+        Assert.Null(lifecycle.RunnerId);
+        Assert.Equal(PortableRunnerState.RemoteRemovalPending, lifecycle.State);
+
+        await lifecycle.UnregisterAsync(1, TimeSpan.Zero, default);
+
+        Assert.Equal(42, lifecycle.RunnerId);
+        Assert.Equal(PortableRunnerState.Removed, lifecycle.State);
+        Assert.Equal(1, admin.RemoveTokenRequests);
+        Assert.Equal(0, process.StartCount);
+    }
+
+    [Fact]
+    public async Task ConfigureFailurePersistsUniqueIdBeforeRecovery()
+    {
+        var admin = new FakeAdmin
+        {
+            Lists = Pages([], [Runner(42, false)], [Runner(42, false)], [])
+        };
+        var process = new FakeProcess { FailConfigure = true };
+        using var lifecycle = NewLifecycle(admin, process);
+
+        await Assert.ThrowsAsync<RunnerProcessException>(() =>
+            lifecycle.RegisterAndStartAsync(1, TimeSpan.Zero, default));
+
+        Assert.Equal(42, lifecycle.RunnerId);
+        Assert.Equal(PortableRunnerState.RemoteRemovalPending, lifecycle.State);
+        await lifecycle.UnregisterAsync(1, TimeSpan.Zero, default);
+        Assert.Equal(PortableRunnerState.Removed, lifecycle.State);
+        Assert.Equal(1, admin.RemoveTokenRequests);
+    }
+
+    [Fact]
+    public async Task ConfigureFailureWithDuplicateExactNamesStaysEvidenceBlocked()
+    {
+        var duplicates = new[] { Runner(41, false), Runner(42, false) };
+        var admin = new FakeAdmin { Lists = Pages([], duplicates, duplicates) };
+        var process = new FakeProcess { FailConfigure = true };
+        using var lifecycle = NewLifecycle(admin, process);
+
+        await Assert.ThrowsAsync<RunnerProcessException>(() =>
+            lifecycle.RegisterAndStartAsync(1, TimeSpan.Zero, default));
+        Assert.Null(lifecycle.RunnerId);
+
+        var error = await Assert.ThrowsAsync<PortableRunnerException>(() =>
+            lifecycle.UnregisterAsync(1, TimeSpan.Zero, default));
+
+        Assert.Equal(PortableRunnerFailure.IdentityUncertain, error.Failure);
+        Assert.Equal(0, admin.RemoveTokenRequests);
+        Assert.Equal(0, process.StartCount);
+    }
+
+    [Fact]
+    public async Task ConfigureTimeoutStillPersistsResolvableIdWithoutStartingRunner()
+    {
+        var admin = new FakeAdmin { Lists = Pages([], [Runner(7, false)]) };
+        var process = new FakeProcess { ConfigureException = new OperationCanceledException("bounded configure timeout") };
+        using var lifecycle = NewLifecycle(admin, process);
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() =>
+            lifecycle.RegisterAndStartAsync(1, TimeSpan.Zero, default));
+
+        Assert.Equal(7, lifecycle.RunnerId);
+        Assert.Equal(PortableRunnerState.RemoteRemovalPending, lifecycle.State);
+        Assert.Equal(0, process.StartCount);
+        Assert.Equal(0, process.VerifyCount);
+    }
+
+    [Fact]
+    public async Task UnknownIdRecoveryRefusesBusyRunnerAndPossibleSurvivor()
+    {
+        var busyAdmin = new FakeAdmin { Lists = Pages([], [], [Runner(8, true, true)]) };
+        var busyProcess = new FakeProcess { FailConfigure = true };
+        using var busy = NewLifecycle(busyAdmin, busyProcess);
+        await Assert.ThrowsAsync<RunnerProcessException>(() =>
+            busy.RegisterAndStartAsync(1, TimeSpan.Zero, default));
+        var busyError = await Assert.ThrowsAsync<PortableRunnerException>(() =>
+            busy.UnregisterAsync(1, TimeSpan.Zero, default));
+        Assert.Equal(PortableRunnerFailure.IdentityUncertain, busyError.Failure);
+        Assert.Equal(0, busyAdmin.RemoveTokenRequests);
+
+        var survivorAdmin = new FakeAdmin { Lists = Pages([], [Runner(9, false)], [Runner(9, true)]) };
+        var survivorProcess = new FakeProcess();
+        using var survivor = NewLifecycle(survivorAdmin, survivorProcess);
+        await survivor.RegisterAndStartAsync(1, TimeSpan.Zero, default);
+        survivorProcess.Owned.ExitIndependently();
+        await survivor.GetRemoteStatusAsync(default);
+        // Simulate loss of current process ownership while the lifecycle still has survivor evidence.
+        survivorProcess.Owned.ResetExitForTest();
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            survivor.ResumeAsync(1, TimeSpan.Zero, cancellation.Token));
+    }
+
+    [Fact]
+    public async Task ResumeVersionDriftFailsBeforeSecondRunStartOrMetadataInjection()
+    {
+        var admin = new FakeAdmin { Lists = Pages([], [Runner(1, false)], [Runner(1, true)]) };
+        var process = new FakeProcess();
+        process.VerifiedClis.Enqueue(Cli);
+        process.VerifiedClis.Enqueue(new FakeCli("9.9.9"));
+        using var lifecycle = NewLifecycle(admin, process);
+
+        await lifecycle.RegisterAndStartAsync(1, TimeSpan.Zero, default);
+        await lifecycle.StopNowAsync(default);
+
+        var error = await Assert.ThrowsAsync<PortableRunnerException>(() =>
+            lifecycle.ResumeAsync(1, TimeSpan.Zero, default));
+
+        Assert.Equal(PortableRunnerFailure.UnsupportedVersion, error.Failure);
+        Assert.Equal(PortableRunnerState.Paused, lifecycle.State);
+        Assert.Equal(2, process.VerifyCount);
+        Assert.Equal(1, process.StartCount);
+        Assert.Single(process.StartedCommands);
+        Assert.Single(process.StartVersions);
+        Assert.Equal(RunnerPin.ReviewedVersion, process.StartVersions[0]);
+    }
+
+    [Fact]
     public void RunEnvironmentContainsVerifiedNonSecretMetadataOnly()
     {
         var info = new ProcessStartInfo("unused") { UseShellExecute = false };
@@ -506,11 +653,17 @@ public sealed class PortableLifecycleTests
     {
         public GitHubRepository Repository => PortableLifecycleTests.Repository;
         public Queue<IReadOnlyList<RepositoryRunner>> Lists { get; set; } = new();
+        public HashSet<int> FailListCalls { get; } = [];
+        public int ListCalls { get; private set; }
         public int RegistrationTokenRequests { get; private set; }
         public int RemoveTokenRequests { get; private set; }
+        public int DeleteStaleRequests { get; private set; }
         public Task<IReadOnlyList<RepositoryRunner>> ListAsync(CancellationToken ct)
         {
             ct.ThrowIfCancellationRequested();
+            ListCalls++;
+            if (FailListCalls.Contains(ListCalls))
+                throw new InvalidOperationException("transient list failure");
             return Task.FromResult(Lists.Dequeue());
         }
         public Task<RunnerOneHourToken> CreateRegistrationTokenAsync(CancellationToken ct)
@@ -523,34 +676,60 @@ public sealed class PortableLifecycleTests
             RemoveTokenRequests++;
             return Task.FromResult(new RunnerOneHourToken("SECRETREMOVE"));
         }
-        public Task DeleteStaleAsync(long id, string confirmedName, CancellationToken ct) => Task.CompletedTask;
+        public Task DeleteStaleAsync(long id, string confirmedName, CancellationToken ct)
+        {
+            DeleteStaleRequests++;
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class FakeProcess : IRunnerProcessAdapter
     {
         public List<RunnerCommand> Commands { get; } = [];
         public List<string> Operations { get; } = [];
+        public List<RunnerCommand> StartedCommands { get; } = [];
+        public List<string> StartVersions { get; } = [];
+        public Queue<IRunnerCli> VerifiedClis { get; } = new();
         public FakeOwned Owned { get; private set; } = new();
         public Action? OnStarted { get; set; }
         public bool FailConfigure { get; set; }
         public bool FailStart { get; set; }
+        public Exception? ConfigureException { get; set; }
         public int StartCount { get; private set; }
+        public int VerifyCount { get; private set; }
         public Task ExecuteAsync(RunnerCommand command, CancellationToken ct)
         {
             Commands.Add(command);
             Operations.Add(command.Arguments[0]);
+            if (ConfigureException is not null) throw ConfigureException;
             if (FailConfigure) throw new RunnerProcessException(RunnerProcessFailure.CommandFailed, "Configuration failed.");
             return Task.CompletedTask;
+        }
+        public Task<IRunnerCli> VerifyCliAsync(CancellationToken ct)
+        {
+            ct.ThrowIfCancellationRequested();
+            VerifyCount++;
+            return Task.FromResult(VerifiedClis.Count > 0 ? VerifiedClis.Dequeue() : Cli);
         }
         public Task<IOwnedRunnerProcess> StartAsync(RunnerCommand command, string verifiedVersion, CancellationToken ct)
         {
             StartCount++;
+            StartedCommands.Add(command);
+            StartVersions.Add(verifiedVersion);
             if (FailStart) throw new RunnerProcessException(RunnerProcessFailure.StartupFailed, "Start failed.");
             Assert.Equal(RunnerPin.ReviewedVersion, verifiedVersion);
             Owned = new FakeOwned();
             OnStarted?.Invoke();
             return Task.FromResult<IOwnedRunnerProcess>(Owned);
         }
+    }
+
+    private sealed class FakeCli(string version) : IRunnerCli
+    {
+        public RunnerCapabilities Capabilities { get; } = new(version, Cli.Capabilities.Options);
+        public RunnerCommand BuildConfigure(RunnerConfiguration configuration) => Cli.BuildConfigure(configuration);
+        public RunnerCommand BuildRemove(string removalToken) => Cli.BuildRemove(removalToken);
+        public RunnerCommand BuildRun() => Cli.BuildRun();
     }
 
     private sealed class FakeOwned : IOwnedRunnerProcess
