@@ -1,23 +1,28 @@
 # CURRENT — github-runner-local
 
-Updated: 2026-09-26. Phase: **D_PROVENANCE_REREVIEW_AND_SEPARATE_WINDOWS_PENDING; OFFICE_G1_GATED**.
+Updated: 2026-09-26. Phase: **D_MERGED; OFFICE_G1_CONTINUOUS_LOCAL_READY; NO_LIVE_G1_YET**.
 
 ## Authority
 
-- Canonical branch: `main`; owner-designated successor Control Tower coordinates on Issue #1.
-- Current handoff: `docs/control-tower/handoffs/GRL-20260926-D-82F1722-SOURCE-WINDOWS-PENDING-V37.md`.
-- Required sentinel: `END_OF_GRL_HANDOFF key=GRL-20260926-D-82F1722-SOURCE-WINDOWS-PENDING-V37 sections=6`.
+- Canonical branch: `main`; continuing owner-designated Control Tower coordinates on Issue #1.
+- Current handoff: `docs/control-tower/handoffs/GRL-20260926-D-MERGED-OFFICE-G1-SINGLE-GOAL-V38.md`.
+- Required sentinel: `END_OF_GRL_HANDOFF key=GRL-20260926-D-MERGED-OFFICE-G1-SINGLE-GOAL-V38 sections=6`.
+- Active task: **Issue #15** original live office G1 packet plus safety `5828537511`, readiness `5828862963`, and continuous single-local dispatch **`5840682223`** through its six-section sentinel.
 
-## Source and worker proof
+## D source gate completed
 
-C/E reviewed and merged; D **NOT merged**. SAME open/draft PR #17 / `feat/grl-d-portable-lifecycle` at `82f1722902e48635bc5e2a55c77a274a1e6e29cc`; old head `25a38842b9665d55fa9c85b3071055149110c1ad`; original source base `be6a34872db8c059de060fafbb4188a0e39e1ce1`. One fast-forward commit, three allowlisted paths; worker handoff Issue #16 `5840372215`, release Issue #1 `5840376225`. Failed/uncertain `config.cmd` now reports no automatically bound numeric ID or remote cleanup; ID-less reopen/repeated Recover remains manual pending. Successful config plus unique ID path remains. Worker office Windows `LOCAL_CHECKED`: restore/build warnings-as-errors PASS (0 warnings/errors), two full unfiltered solution runs **384/384** each (Core 192, Presentation 58, Integration 134), 0 failed/skipped, BatchBoundary **11/11**, diff check PASS. Official RunnerContractProbe not rerun at new head. No independent source verdict or separate new-head Windows witness yet.
+C/E and now D are merged. PR #17 reviewed head `82f1722902e48635bc5e2a55c77a274a1e6e29cc`; merge commit `5c268de282379a8dcd3a9165424d369ce804c5fa`. Separate CT decision Issue #16 `5840663406` accepted independent source `5840615635` (zero G1_PATH_BLOCKER/SAFETY_BLOCKER) and separate non-admin Windows `5840628810`, both at unchanged reviewed head. Claims released Issue #1 `5840617792` / `5840630032`.
 
-## Active tasks
+Windows LOCAL_CHECKED: restore/build warnings-as-errors PASS (0 warnings/errors); two full unfiltered tests each 384/384, no failures/skips; BatchBoundary 11/11; official v2.337.0 hash/listener/help probe PASS; clean diff/worktree. Reviewed-head-to-merge difference is documentation only. No new generic full-test campaign for merge/docs; this remains distinct from real-integration WINDOWS_TESTED/G1.
 
-Issue #16 CT packet `5840393630` dispatches ONE different independent source reviewer across full 21 PR files/three correction paths and ONE separate non-admin office Windows read-only tester at this exact head, possibly in parallel with separate Issue #1 claims/results. Reviewer must independently check unrelated same-name runner after failed config, ID-less durable/reopen/repeated Recover, successful unique-ID path, and R-D-1/R-D-2/R-D-4. Tester must run full restore/build/twice-unfiltered tests and official pinned v2.337.0 CLI probe. CT adjudicates only both results at same unchanged SHA. Neither worker nor witness source proof is real-integration `WINDOWS_TESTED`.
+## Continuous local execution
 
-## Live gates and next
+After CT claim release, ONE operator on the owner-approved OFFICE Windows laptop claims Issue #1 and runs **G1-A -> G1-B -> G1-C -> G1-D sequentially in the SAME session**. Owner requests local Sol Fast, NO subagents/child agents/delegation and no artificial stage-by-stage handoffs. Resolve normal setup/transient problems directly; retain sanitized progress. Pause only for unavoidable owner browser/permission interaction or a real authority/security/product blocker. Do not redesign or patch reviewed runtime/template semantics to manufacture success.
 
-No hosted Actions until owner re-enables. No live login, runner registration/start/removal, Stop Now, GitHub job, private execution-repo activation, merge or G1 during D proof. Office `grl-office` owner-approved OD-7/D29 for later Issue #15 G1 on private `bohanyt/github-runner-local-exec` only after reviewed D merge; check actual runner log version against E result metadata. Conditional personal `grl-personal` after G1 PASS remains D30, one active at a time; Issue #18 switching proof pending.
+Issue #15 `5840682223` authorizes merged-product build/--live Device Flow, exact private-repo bootstrap from reviewed E, mailbox and FOUR Actions variables, product grl-office enrollment/start, harmless exact-SHA fixture plus the two required live negatives, complete evidence/report and claim release. Verify App Administration: Read & write, Git PATH, free disk/reserve, other online runners and actual running version versus result metadata. Existing connector admin does not verify the product App permission. No manual config/run substitute for the product.
 
-Next: collect independent review plus separate exact-head Windows witness under `5840393630`; CT decides correction or merge readiness.
+## Standing boundaries and next
+
+No GitHub-hosted Actions until owner re-enables; no service/UAC/security/sleep-policy changes, Stage-2 or cross-repo execution. No implicit Stop Now/unregister/delete based on idle snapshots. Failed/uncertain ID-less setup remains manual pending; existing-root relaunch is recovery-only. Keep credentials/local machine details out of public evidence.
+
+No live office login, enrollment, private bootstrap or G1 has been performed by CT. Only full live positive and negative proofs permit G1_OFFICE_PASS. OD-7/D29 office approval stands. Conditional D30 personal enrollment remains AFTER accepted G1; next product priority is reopen/restart, then separate Issue #18 one-active-at-a-time switching proof. No personal runner in this goal.
