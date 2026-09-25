@@ -1,25 +1,21 @@
 # CURRENT — github-runner-local
 
-Updated: 2026-09-25. Phase: **D_SOURCE_REREVIEW_AND_SEPARATE_WINDOWS_PENDING; OFFICE_G1_GATED**.
+Updated: 2026-09-26. Phase: **D_CONFIGURE_FAIL_PROVENANCE_CORRECTION; OFFICE_G1_GATED**.
 
 ## Authority
 
 - Canonical branch: `main`; owner-designated successor Control Tower coordinates on Issue #1.
-- Current handoff: `docs/control-tower/handoffs/GRL-20260925-D-25A3884-SOURCE-WINDOWS-PENDING-V35.md`.
-- Required sentinel: `END_OF_GRL_HANDOFF key=GRL-20260925-D-25A3884-SOURCE-WINDOWS-PENDING-V35 sections=6`.
+- Current handoff: `docs/control-tower/handoffs/GRL-20260926-D-CONFIGURE-FAIL-PROVENANCE-CORRECTION-V36.md`.
+- Required sentinel: `END_OF_GRL_HANDOFF key=GRL-20260926-D-CONFIGURE-FAIL-PROVENANCE-CORRECTION-V36 sections=6`.
 
-## Source status
+## Exact-head status
 
-C and E independently reviewed/merged. D **NOT merged**. SAME DRAFT PR #17 / `feat/grl-d-portable-lifecycle` at `25a38842b9665d55fa9c85b3071055149110c1ad`; old failed head `69c0b9e267819e11366729805cb61de456b53524`; original source base `be6a34872db8c059de060fafbb4188a0e39e1ce1`. Worker handoff Issue #16 `5835825727`, claim released Issue #1 `5835830917`, one fast-forward commit/four allowlisted paths. Worker reports ID-less reopen removal now blocked, refused recovery preserves evidence, test import fixed.
+C/E independently reviewed and merged. D **NOT merged**. SAME open/draft PR #17 / `feat/grl-d-portable-lifecycle` at `25a38842b9665d55fa9c85b3071055149110c1ad`; source base `be6a34872db8c059de060fafbb4188a0e39e1ce1`. Independent Issue #16 review `5836285914`: **NEEDS_D_CORRECTION**, one blocking provenance flaw: failed-to-start `config.cmd` can be followed by an unrelated same-name runner appearing, whose numeric ID is wrongly persisted and later eligible for DELETE. Reviewer released claim Issue #1 `5836293286`. Separate office Windows read-only Issue #16 `5836279999` PASS provisional on this SHA: restore/build 0 warnings/errors; two full solution runs 382/382 each; 11/11 BatchBoundary; official v2.337.0 pinned CLI probe PASS; claim released Issue #1 `5836284576`. This `LOCAL_CHECKED` source proof cannot clear a source blocker or count as real-integration `WINDOWS_TESTED`.
 
-Local Windows worker proof at new head: restore/build warnings-as-errors PASS (0 warnings/errors), two full unfiltered solution tests **382/382 each**, Core 192, Presentation 58, Integration 132, 0 failed/skipped, BatchBoundary **11/11**, `git diff --check` PASS. This is `LOCAL_CHECKED` worker evidence only; official RunnerContractProbe was not rerun on new head. No independent new-head source verdict or separate new-head Windows witness yet. Old-head failures and passes cannot transfer.
+## Active task
 
-## Active tasks
-
-Issue #16 CT packet `5836048062` dispatches one independent source reviewer different from worker/CT across all 21 PR paths and four correction paths, **and** one separate office Windows read-only tester on exact head. They may run in parallel with separate Issue #1 claims and Issue #16 results. Reviewer checks R-D-3 ID-less repeated Recover/crash safety plus R-D-1/R-D-2/R-D-4 regression guards. Tester runs clean non-admin restore/build/twice-full-tests, official v2.337.0 CLI probe, diff/status. CT adjudicates only same unchanged SHA; any FAIL returns to bounded same-PR correction, both PASS lead to separate merge readiness decision. No self-review.
+Issue #16 CT packet `5836392337` dispatches ONE bounded local Windows worker to correct failed-config ID binding on SAME branch/PR, expected old head `25a38842b9665d55fa9c85b3071055149110c1ad`. Revised contract: bind remote numeric ID automatically only after successful `config.cmd` completion and unique prompt exact-name lookup during the bounded registration; any failed/uncertain configuration or ID attribution is manual inspection, no automatic name-based recovery/deletion. Add real lifecycle+composition regressions for unrelated same-name runner after failed config and repeat Recover; preserve R-D-1/R-D-2/R-D-4. Build and twice-full tests on office Windows before push; claim/release on Issue #1. Another different source review and separate new-head Windows witness follow before CT merge decision.
 
 ## Live gates and next
 
-No hosted Actions until owner re-enables. No live login, runner registration/start, Stop Now, remote removal, private execution-repo activation, merge or G1 during source proof. Office `grl-office` owner approved OD-7/D29 for later Issue #15 G1 on private `bohanyt/github-runner-local-exec` only after reviewed D merge; G1 checks actual log runner version vs E metadata. Conditional post-G1 personal `grl-personal` remains D30 one active at a time, with Issue #18 switch contract unproved.
-
-Dispatch both exact-head proofs under `5836048062`; CT then decides correction or merge readiness.
+No hosted Actions until owner re-enables. No live login, runner registration/start, Stop Now, remote removal, private execution-repo activation, merge or G1 during source correction. Office `grl-office` approved OD-7/D29 for later Issue #15 G1 on private `bohanyt/github-runner-local-exec` only after reviewed D merge. G1 checks actual runner log version versus E result metadata for in-process auto-update. Conditional personal `grl-personal` after G1 PASS remains D30, one active at a time with Issue #18 switch proof. Next: one correction worker under `5836392337`.
