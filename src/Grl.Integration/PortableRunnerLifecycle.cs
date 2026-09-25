@@ -11,7 +11,11 @@ public sealed record PortableRunnerJournalEntry(DateTimeOffset At, PortableRunne
     public override string ToString() => $"{At:O} {State}: {Evidence}";
 }
 
-public enum PortableRunnerFailure { NameCollision, OnlineTimeout, DrainUnavailable, ActiveProcess, IdentityUncertain, NoOwnedProcess, InvalidState }
+public enum PortableRunnerFailure
+{
+    NameCollision, OnlineTimeout, DrainUnavailable, ActiveProcess, IdentityUncertain,
+    RemoteUnavailable, PossibleSurvivingProcess, UnsupportedVersion, NoOwnedProcess, InvalidState
+}
 
 public sealed class PortableRunnerException(PortableRunnerFailure failure, string message) : Exception(message)
 {
@@ -32,6 +36,7 @@ public sealed class PortableRunnerLifecycle : IDisposable
     private readonly List<PortableRunnerJournalEntry> journal = [];
     private IOwnedRunnerProcess? owned;
     private long? runnerId;
+    private bool registrationMayExist;
     private bool processMaySurvive;
 
     public PortableRunnerLifecycle(IRunnerAdministration admin, IRunnerCli cli, IRunnerProcessAdapter process,
@@ -72,27 +77,51 @@ public sealed class PortableRunnerLifecycle : IDisposable
         Record(PortableRunnerState.Configuring, "No matching remote runner; configuration started.");
         try
         {
+            Exception? configureError = null;
             using (var token = await admin.CreateRegistrationTokenAsync(ct))
             {
                 using var command = cli.BuildConfigure(new RunnerConfiguration(
                     new Uri($"https://github.com/{admin.Repository.FullName}"), token.Value,
                     name, label, "_work"));
-                await process.ExecuteAsync(command, ct);
+                registrationMayExist = true;
+                try
+                {
+                    await process.ExecuteAsync(command, ct);
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception error)
+                {
+                    configureError = error;
+                }
             }
-            Record(PortableRunnerState.Configured, "Configuration completed; remote identity pending.");
-            var configured = (await admin.ListAsync(ct)).SingleOrDefault(x => x.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
-            if (configured is null || configured.Id <= 0)
-                throw new PortableRunnerException(PortableRunnerFailure.IdentityUncertain, "Configured runner identity is unconfirmed.");
-            runnerId = configured.Id;
-            Record(PortableRunnerState.Configured, "Exact remote runner ID recorded; process has not started.");
+
+            PortableRunnerException? identityError = null;
+            try
+            {
+                await ResolveRunnerIdAsync(maxPolls, pollInterval, requireOfflineIdle: true, ct);
+            }
+            catch (PortableRunnerException error)
+            {
+                identityError = error;
+            }
+
+            if (configureError is not null) throw configureError;
+            if (identityError is not null) throw identityError;
+
+            Record(PortableRunnerState.Configured, "Configuration completed and exact remote runner ID is persisted.");
+            var verifiedCli = await VerifyBeforeStartAsync(ct);
             processMaySurvive = true;
-            Record(PortableRunnerState.Starting, "Portable runner start requested; a process may survive an app crash.");
-            using var runCommand = cli.BuildRun();
-            owned = await process.StartAsync(runCommand, VerifiedVersion(), ct);
+            Record(PortableRunnerState.Starting, "Portable runner start requested after an immediate CLI version probe; a process may survive an app crash.");
+            using var runCommand = verifiedCli.BuildRun();
+            owned = await process.StartAsync(runCommand, verifiedCli.Capabilities.Version, ct);
             for (var attempt = 0; attempt < maxPolls; attempt++)
             {
                 ct.ThrowIfCancellationRequested();
-                var match = (await admin.ListAsync(ct)).SingleOrDefault(x => x.Id == runnerId && x.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+                var match = (await admin.ListAsync(ct)).SingleOrDefault(
+                    x => x.Id == runnerId && x.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
                 if (match?.Online == true)
                 {
                     Record(PortableRunnerState.Online, "Exact runner name observed online.");
@@ -101,16 +130,27 @@ public sealed class PortableRunnerLifecycle : IDisposable
                 if (owned.HasExited) break;
                 if (attempt + 1 < maxPolls) await delay.WaitAsync(pollInterval, ct);
             }
-            throw new PortableRunnerException(PortableRunnerFailure.OnlineTimeout, "Runner did not become online within the polling bound.");
+            throw new PortableRunnerException(PortableRunnerFailure.OnlineTimeout,
+                "Runner did not become online within the polling bound.");
         }
         catch (Exception error)
         {
             if (owned is null && error is RunnerProcessException { Failure: RunnerProcessFailure.StartupFailed })
                 processMaySurvive = false;
             ReleaseExited();
-            Record(PortableRunnerState.Degraded, HasOwnedProcess
-                ? "Registration/start uncertain; owned process remains active. Explicit Stop Now may cancel work."
-                : "Registration/start incomplete; remote cleanup may be pending.");
+            if (registrationMayExist && !HasOwnedProcess && !processMaySurvive)
+            {
+                Record(PortableRunnerState.RemoteRemovalPending,
+                    runnerId is null
+                        ? "Configuration may have registered remotely; exact numeric identity remains unresolved. Recovery must re-resolve exact evidence before removal."
+                        : "Configuration registered a remote runner but portable start did not complete; exact removal remains pending.");
+            }
+            else
+            {
+                Record(PortableRunnerState.Degraded, HasOwnedProcess
+                    ? "Registration/start uncertain; owned process remains active. Explicit Stop Now may cancel work."
+                    : "Registration/start incomplete; a process may survive or remote cleanup may be pending.");
+            }
             throw;
         }
     }
@@ -129,28 +169,51 @@ public sealed class PortableRunnerLifecycle : IDisposable
     public async Task StopNowAsync(CancellationToken ct)
     {
         RefuseElevation();
-        if (!HasOwnedProcess) throw new PortableRunnerException(PortableRunnerFailure.NoOwnedProcess, "No live product-owned runner process is available to stop.");
+        if (!HasOwnedProcess)
+            throw new PortableRunnerException(PortableRunnerFailure.NoOwnedProcess,
+                "No live product-owned runner process is available to stop.");
         await StopOwnedAsync(ct);
         processMaySurvive = false;
-        Record(PortableRunnerState.Paused, "Explicit Stop Now terminated the owned process; an active job may have been cancelled.");
+        Record(PortableRunnerState.Paused,
+            "Explicit Stop Now terminated the owned process; an active job may have been cancelled.");
     }
 
     public async Task ResumeAsync(int maxPolls, TimeSpan interval, CancellationToken ct)
     {
         RefuseElevation();
         ReleaseExited();
-        if (State != PortableRunnerState.Paused || owned is not null || runnerId is null || maxPolls is < 1 or > 120 || !ValidInterval(interval))
-            throw new PortableRunnerException(PortableRunnerFailure.InvalidState, "Resume state or polling bound is invalid.");
-        processMaySurvive = true;
-        Record(PortableRunnerState.Starting, "Portable runner resume requested; a process may survive an app crash.");
+        if (State != PortableRunnerState.Paused || owned is not null || runnerId is null ||
+            maxPolls is < 1 or > 120 || !ValidInterval(interval))
+            throw new PortableRunnerException(PortableRunnerFailure.InvalidState,
+                "Resume state or polling bound is invalid.");
+
+        IRunnerCli verifiedCli;
         try
         {
-            using var runCommand = cli.BuildRun();
-            owned = await process.StartAsync(runCommand, VerifiedVersion(), ct);
+            verifiedCli = await VerifyBeforeStartAsync(ct);
+            Record(PortableRunnerState.Paused,
+                "Runner CLI version re-verified immediately before resume; no process has started yet.");
+        }
+        catch
+        {
+            processMaySurvive = false;
+            Record(PortableRunnerState.Paused,
+                "Resume blocked before process start because the runner CLI could not be verified at the reviewed version.");
+            throw;
+        }
+
+        processMaySurvive = true;
+        Record(PortableRunnerState.Starting,
+            "Portable runner resume requested after an immediate CLI version probe; a process may survive an app crash.");
+        try
+        {
+            using var runCommand = verifiedCli.BuildRun();
+            owned = await process.StartAsync(runCommand, verifiedCli.Capabilities.Version, ct);
             for (var attempt = 0; attempt < maxPolls; attempt++)
             {
                 ct.ThrowIfCancellationRequested();
-                var match = (await admin.ListAsync(ct)).SingleOrDefault(x => x.Id == runnerId && x.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+                var match = (await admin.ListAsync(ct)).SingleOrDefault(
+                    x => x.Id == runnerId && x.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
                 if (match?.Online == true)
                 {
                     Record(PortableRunnerState.Online, "Exact runner name observed online after resume.");
@@ -159,7 +222,8 @@ public sealed class PortableRunnerLifecycle : IDisposable
                 if (owned.HasExited) break;
                 if (attempt + 1 < maxPolls) await delay.WaitAsync(interval, ct);
             }
-            throw new PortableRunnerException(PortableRunnerFailure.OnlineTimeout, "Runner did not resume online within the polling bound.");
+            throw new PortableRunnerException(PortableRunnerFailure.OnlineTimeout,
+                "Runner did not resume online within the polling bound.");
         }
         catch (Exception error)
         {
@@ -168,7 +232,9 @@ public sealed class PortableRunnerLifecycle : IDisposable
             ReleaseExited();
             Record(PortableRunnerState.Degraded, HasOwnedProcess
                 ? "Resume uncertain; owned process remains active. Explicit Stop Now may cancel work."
-                : "Resume incomplete; remote registration may remain.");
+                : processMaySurvive
+                    ? "Resume incomplete; a process may survive and remote registration remains pending."
+                    : "Resume did not start a process; remote registration remains.");
             throw;
         }
     }
@@ -181,42 +247,68 @@ public sealed class PortableRunnerLifecycle : IDisposable
             throw new PortableRunnerException(PortableRunnerFailure.ActiveProcess,
                 "Owned runner process is active; unregister is pending. Stop Now is a separate warned action.");
         if (processMaySurvive)
-            throw new PortableRunnerException(PortableRunnerFailure.IdentityUncertain,
-                "A process may survive without current ownership; unregister is pending.");
+            throw new PortableRunnerException(PortableRunnerFailure.PossibleSurvivingProcess,
+                "A runner process may survive without current ownership. Retrying removal cannot make that evidence safe.");
         if (maxPolls is < 1 or > 120 || !ValidInterval(interval))
             throw new PortableRunnerException(PortableRunnerFailure.InvalidState, "Removal polling bound is invalid.");
         if (State is PortableRunnerState.Ready or PortableRunnerState.Removed)
-            throw new PortableRunnerException(PortableRunnerFailure.InvalidState, "No configured runner is available for unregister.");
+            throw new PortableRunnerException(PortableRunnerFailure.InvalidState,
+                "No configured runner is available for unregister.");
+
         try
         {
-            if (runnerId is null) throw new PortableRunnerException(PortableRunnerFailure.IdentityUncertain, "Exact runner ID is unavailable.");
+            if (runnerId is null)
+            {
+                if (!registrationMayExist)
+                    throw new PortableRunnerException(PortableRunnerFailure.IdentityUncertain,
+                        "Registration is not known to have reached a stage where exact remote identity can be re-resolved.");
+                await ResolveRunnerIdAsync(maxPolls, interval, requireOfflineIdle: true, ct);
+            }
+
             var before = await admin.ListAsync(ct);
-            var exact = before.SingleOrDefault(x => x.Id == runnerId && x.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+            var exact = before.SingleOrDefault(
+                x => x.Id == runnerId && x.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
             if (exact is null || exact.Online || exact.Busy ||
                 before.Any(x => x.Name.Equals(name, StringComparison.OrdinalIgnoreCase) && x.Id != runnerId))
-                throw new PortableRunnerException(PortableRunnerFailure.IdentityUncertain, "Exact remote runner identity or offline state is uncertain.");
+                throw new PortableRunnerException(PortableRunnerFailure.IdentityUncertain,
+                    "Exact remote runner identity is not uniquely confirmed offline and non-busy.");
+
             using (var token = await admin.CreateRemoveTokenAsync(ct))
             using (var command = cli.BuildRemove(token.Value))
                 await process.ExecuteAsync(command, ct);
+
             for (var attempt = 0; attempt < maxPolls; attempt++)
             {
-                if (!(await admin.ListAsync(ct)).Any(x => x.Id == runnerId || x.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
+                if (!(await admin.ListAsync(ct)).Any(
+                    x => x.Id == runnerId || x.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
                 {
+                    registrationMayExist = false;
                     Record(PortableRunnerState.Removed, "Exact runner absent from repository list.");
                     return;
                 }
                 if (attempt + 1 < maxPolls) await delay.WaitAsync(interval, ct);
             }
-            Record(PortableRunnerState.RemoteRemovalPending, "Removal command completed; remote absence unverified.");
+            Record(PortableRunnerState.RemoteRemovalPending,
+                "Removal command completed; remote absence remains unverified.");
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            Record(PortableRunnerState.RemoteRemovalPending, "Removal cancelled; remote state is unverified.");
+            Record(PortableRunnerState.RemoteRemovalPending,
+                "Removal cancelled; remote state is unverified.");
+            throw;
+        }
+        catch (PortableRunnerException error)
+            when (error.Failure is PortableRunnerFailure.IdentityUncertain or
+                PortableRunnerFailure.PossibleSurvivingProcess)
+        {
+            Record(PortableRunnerState.RemoteRemovalPending,
+                "Removal is evidence-blocked. Retrying alone cannot establish safety; inspect the exact repository runner only after independently confirming no listener is active.");
             throw;
         }
         catch
         {
-            Record(PortableRunnerState.RemoteRemovalPending, "Remote removal unavailable or unverified; retry explicitly.");
+            Record(PortableRunnerState.RemoteRemovalPending,
+                "Remote runner status or removal is unavailable; retry only after connectivity is restored.");
             throw;
         }
     }
@@ -228,15 +320,98 @@ public sealed class PortableRunnerLifecycle : IDisposable
     }
 
     public async Task<RepositoryRunner?> GetRemoteStatusAsync(CancellationToken ct) =>
-        (await admin.ListAsync(ct)).SingleOrDefault(x => x.Id == runnerId && x.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+        (await admin.ListAsync(ct)).SingleOrDefault(
+            x => x.Id == runnerId && x.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
 
-    private string VerifiedVersion() => cli.Capabilities.Version == RunnerPin.ReviewedVersion
-        ? cli.Capabilities.Version
-        : throw new RunnerCliException(RunnerCliFailure.UnsupportedVersion, "A verified supported runner version is required.");
+    private async Task<RepositoryRunner> ResolveRunnerIdAsync(
+        int maxPolls, TimeSpan interval, bool requireOfflineIdle, CancellationToken ct)
+    {
+        Exception? lastListError = null;
+        var successfulLists = 0;
+        for (var attempt = 0; attempt < maxPolls; attempt++)
+        {
+            ct.ThrowIfCancellationRequested();
+            IReadOnlyList<RepositoryRunner> listed;
+            try
+            {
+                listed = await admin.ListAsync(ct);
+                successfulLists++;
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception error)
+            {
+                lastListError = error;
+                if (attempt + 1 < maxPolls) await delay.WaitAsync(interval, ct);
+                continue;
+            }
+
+            var matches = listed
+                .Where(x => x.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+            if (matches.Length > 1)
+                throw new PortableRunnerException(PortableRunnerFailure.IdentityUncertain,
+                    "Multiple exact-name runners exist; numeric identity cannot be chosen safely.");
+            if (matches.Length == 1)
+            {
+                var match = matches[0];
+                if (match.Id <= 0)
+                    throw new PortableRunnerException(PortableRunnerFailure.IdentityUncertain,
+                        "The exact-name runner has no usable numeric identity.");
+                runnerId = match.Id;
+                Record(State, "Exact remote runner ID resolved and persisted before any removal token or portable start.");
+                if (requireOfflineIdle && (match.Online || match.Busy))
+                    throw new PortableRunnerException(PortableRunnerFailure.IdentityUncertain,
+                        "The exact-name runner is online or busy; removal/start is evidence-blocked.");
+                return match;
+            }
+
+            if (attempt + 1 < maxPolls) await delay.WaitAsync(interval, ct);
+        }
+
+        if (successfulLists == 0 && lastListError is not null)
+            throw new PortableRunnerException(PortableRunnerFailure.RemoteUnavailable,
+                "GitHub runner status could not be read within the bounded identity-resolution poll.");
+
+        throw new PortableRunnerException(PortableRunnerFailure.IdentityUncertain,
+            "No unique exact-name runner ID became visible within the bounded poll. Retrying alone cannot prove identity.");
+    }
+
+    private async Task<IRunnerCli> VerifyBeforeStartAsync(CancellationToken ct)
+    {
+        try
+        {
+            var verified = await process.VerifyCliAsync(ct);
+            if (verified.Capabilities.Version != RunnerPin.ReviewedVersion)
+                throw new PortableRunnerException(PortableRunnerFailure.UnsupportedVersion,
+                    $"Runner self-update/version drift detected. This wizard supports only {RunnerPin.ReviewedVersion}.");
+            return verified;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (PortableRunnerException)
+        {
+            throw;
+        }
+        catch (Exception error) when (error is RunnerCliException or RunnerProcessException)
+        {
+            throw new PortableRunnerException(PortableRunnerFailure.UnsupportedVersion,
+                $"Runner version could not be verified immediately before start. It may have self-updated; this wizard supports only {RunnerPin.ReviewedVersion}.");
+        }
+    }
 
     private void ReleaseExited()
     {
-        if (owned is { HasExited: true }) { owned.Dispose(); owned = null; processMaySurvive = false; }
+        if (owned is { HasExited: true })
+        {
+            owned.Dispose();
+            owned = null;
+            processMaySurvive = false;
+        }
     }
 
     private async Task StopOwnedAsync(CancellationToken ct)
@@ -259,12 +434,14 @@ public sealed class PortableRunnerLifecycle : IDisposable
         !string.IsNullOrWhiteSpace(value) && value.Length <= 128 &&
         value.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_' or '.');
 
-    private static bool ValidInterval(TimeSpan value) => value >= TimeSpan.Zero && value <= TimeSpan.FromMinutes(1);
+    private static bool ValidInterval(TimeSpan value) =>
+        value >= TimeSpan.Zero && value <= TimeSpan.FromMinutes(1);
 
     private void RefuseElevation()
     {
-        if (elevated()) throw new RunnerProcessException(RunnerProcessFailure.Elevated,
-            "Portable runner mutation requires an unelevated process.");
+        if (elevated())
+            throw new RunnerProcessException(RunnerProcessFailure.Elevated,
+                "Portable runner mutation requires an unelevated process.");
     }
 
     public void Dispose()
