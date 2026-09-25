@@ -35,6 +35,9 @@ Use `ACCEPTED` only for explicit owner direction or an approved technical decisi
 | D29 | ACCEPTED | OD-7: owner authorizes the CURRENT OFFICE WINDOWS LAPTOP as the first portable trusted-code-only runner for live D/G1. Runner name `grl-office`; same-repo harmless fixture only; non-admin portable mode; no Stage-2/service/UAC/hosted-Actions path. Source: owner approval in chat, durably packeted as Issue #15 / GRL-012 on 2026-09-25. |
 | D30 | ACCEPTED | After G1 PASS only, owner authorizes enrolling the PERSONAL laptop as a second registered runner `grl-personal` in the same private execution repo. Operating invariant: **ONE ACTIVE AT A TIME** while both share label `grl-exec`; never copy runner credentials between laptops. D03 remains the initial/G1 one-runner rule. Source: owner approval in chat, durably packeted as Issue #15 / GRL-012 on 2026-09-25. |
 
+| D31 | ACCEPTED | CT technical safety decision for D source: automatic safe Drain is unavailable under the reviewed pinned portable runner contract. `DrainAsync`/UI must fail closed without terminating the runner; unregister may not implicitly drain/stop an active process. Explicit Stop Now warns that it can cancel active or newly assigned work and only targets a product-owned process. Source: Issue #16 CT correction packet `5828534853`; independent review and G1 remain gated. |
+| D32 | OPEN | A supported admission fence, job completion proof and exact-identity switching protocol for office/personal one-active-at-a-time operation remain unproved. Design Issue #18; no automatic switching or personal activation under the D source correction. Owner's conditional D30 authorization remains valid after G1 PASS. |
+
 ## Corrections to earlier exploratory conversation
 
 - Runner labels select among accessible runners; they do not make a repository registration account-wide.
