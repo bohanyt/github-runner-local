@@ -342,7 +342,7 @@ public sealed class PresentationTests
     private static WizardSession NewSession(WizardState? state = null,
         FakeScenario scenario = FakeScenario.HappyPath) =>
         new(new ScenarioSelection(scenario, string.Empty), new FakeClock(),
-            new PreviewDelay(TimeSpan.Zero), WizardAdapters.CreateFake(), state);
+            new PreviewDelay(TimeSpan.Zero), WizardAdapters.CreateFake(scenario), state);
 
     [DllImport("grl-test-only-native-sentinel")]
     private static extern int NativeImportSentinel();

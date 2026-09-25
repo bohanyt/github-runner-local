@@ -36,6 +36,18 @@ The app is a preview with fake adapters and fictional data only. To inspect a sc
 
 ## Checkpoint C
 
-The solution includes the plain `net10.0` Integration library and deterministic fake-HTTP/synthetic-archive tests. It does not connect these adapters to the WPF app. Run the solution commands above in order; the Integration tests use no live GitHub network.
+The solution includes the plain `net10.0` Integration library and deterministic fake-HTTP/synthetic-archive tests. Run the solution commands above in order; the Integration tests use no live GitHub network.
 
 The separate `tests/Grl.RunnerContractProbe` project is intentionally outside the solution. On a non-elevated Windows machine with .NET 10, build it with `dotnet build tests/Grl.RunnerContractProbe/Grl.RunnerContractProbe.csproj -warnaserror`, then from the repository root run `dotnet run --project tests/Grl.RunnerContractProbe/Grl.RunnerContractProbe.csproj --no-build -- runner-pins.json`. It downloads only the reviewed official Windows x64 runner, checks its SHA-256 before extraction, and invokes only `Runner.Listener.exe --version` and `config.cmd --help`. It creates and removes one unique temporary directory. It never registers or starts a runner. The pin is initial-install metadata; GitHub's normal runner auto-update remains enabled for later live work.
+
+## Checkpoint D source
+
+The default WPF launch still uses fictional preview adapters. Live composition is selected only with the complete, non-secret argument set below, after a separate live acceptance dispatch:
+
+```text
+GitHubRunnerLocal.exe --live --client-id CLIENT_ID --repo OWNER/PRIVATE_REPO --runner-name RUNNER_NAME --root OWNED_LOCAL_ROOT
+```
+
+The root must already be an ordinary local directory on C:. No access, registration, or removal token is accepted as a command-line argument. Source validation does not launch `--live` or perform device login, registration, runner start, or execution-repository activation.
+
+For the D source campaign, run `dotnet restore GitHubRunnerLocal.sln`, `dotnet build GitHubRunnerLocal.sln -warnaserror`, `dotnet test GitHubRunnerLocal.sln`, then `dotnet test GitHubRunnerLocal.sln --no-build`. The Integration tests use fake HTTP/process adapters; the separate Windows runner contract probe above is read-only. The production batch boundary invokes only the pinned `config.cmd`/`run.cmd` from the verified runner root through the fixed Windows command interpreter with structured arguments and strict character/shape validation.
