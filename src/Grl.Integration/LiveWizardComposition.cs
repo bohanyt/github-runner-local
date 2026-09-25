@@ -357,6 +357,11 @@ internal sealed class LiveWizardAdapters : IPreflightAdapter, IDeviceSignInAdapt
             PreserveReopenPending();
             throw new AdapterOperationException("DISCONNECT_REMOTE_UNAVAILABLE");
         }
+        catch (RunnerAdminException error) when (error.Failure == RunnerAdminFailure.IdentityChanged)
+        {
+            PreserveReopenPending();
+            throw new AdapterOperationException("DISCONNECT_IDENTITY_BLOCKED");
+        }
         catch
         {
             PreserveReopenPending();
