@@ -6,12 +6,22 @@ import { fileURLToPath } from 'node:url';
 import { lintSource, lintTemplate } from '../tools/lint.mjs';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
+const runtimeSources = [
+  readFileSync(resolve(root, '.github/actions/grl-admit/main.mjs'), 'utf8'),
+  readFileSync(resolve(root, '.github/actions/grl-report/main.mjs'), 'utf8'),
+  readFileSync(resolve(root, '.github/actions/grl-run-profile/main.mjs'), 'utf8'),
+  readFileSync(resolve(root, '.github/actions/grl-verdict/main.mjs'), 'utf8'),
+  ...['action-io.mjs', 'admission.mjs', 'execution.mjs', 'github-api.mjs',
+    'protocol.mjs', 'reporting.mjs', 'system-adapter.mjs']
+    .map(name => readFileSync(resolve(root, 'lib', name), 'utf8'))
+];
 const source = {
   workflow: readFileSync(resolve(root, '.github/workflows/grl-dispatch.yml'), 'utf8').replaceAll('\r\n', '\n'),
   profiles: [readFileSync(resolve(root, 'profiles/js-smoke.json'))],
   runAction: readFileSync(resolve(root, '.github/actions/grl-run-profile/main.mjs'), 'utf8'),
   reportLibrary: readFileSync(resolve(root, 'lib/reporting.mjs'), 'utf8'),
   verdictAction: readFileSync(resolve(root, '.github/actions/grl-verdict/main.mjs'), 'utf8'),
+  runtimeSources,
   changedPaths: ['templates/execution-repo/README.md'], drift: []
 };
 const mutate = (field, before, after) => ({ ...source,
@@ -25,13 +35,14 @@ test('unaltered template passes lint and schema mirror check', () => {
 test('linter rejects workflow trigger, permission, prefilter and runner regressions', () => {
   const cases = [
     [mutate('workflow', 'types: [created]', 'types: [edited]'), 'TRIGGER'],
+    [mutate('workflow', 'types: [created]', 'types: [created]\n  push:'), 'TRIGGER'],
     [mutate('workflow', 'permissions: {}', 'permissions: write-all'), 'TOP_PERMISSIONS'],
     [mutate('workflow', "github.event.comment.author_association == 'OWNER'", 'true'), 'PREFILTER_'],
     [mutate('workflow', 'github.event.issue.pull_request == null', 'true'), 'PREFILTER_'],
     [mutate('workflow', 'runs-on: [self-hosted, Windows, X64, grl-exec]',
       'runs-on: ubuntu-latest'), 'RUNNER_'],
-    [mutate('workflow', 'if: >-', 'if: true'), 'JOB_LEVEL_PREFILTER']
-    , [mutate('workflow', "startsWith(github.event.comment.body, '<!-- grl-request v1 -->')",
+    [mutate('workflow', 'if: >-', 'if: true'), 'JOB_LEVEL_PREFILTER'],
+    [mutate('workflow', "startsWith(github.event.comment.body, '<!-- grl-request v1 -->')",
       "startsWith(github.event.comment.body, '<!-- grl-request v1 -->') || true"), 'WEAK_PREFILTER']
   ];
   for (const [candidate, code] of cases)
@@ -47,9 +58,13 @@ test('linter rejects action, checkout, shell, Stage-2 and retention regressions'
     [mutate('workflow', 'persist-credentials: false', 'persist-credentials: true'),
       'CHECKOUT_CREDENTIALS'],
     [mutate('workflow', '    steps:\n      - uses:',
-      '    steps:\n      - run: echo ${{ github.event.comment.body }}\n      - uses:'), 'SHELL_RUN'],
-    [mutate('workflow', 'path: grl-target',
-      'repository: ${{ vars.STAGE2_REPOSITORY }}\n          path: grl-target'), 'STAGE2_CREDENTIAL'],
+      '    steps:\n      - name: shell mutation\n        run: echo ${{ github.event.comment.body }}\n      - uses:'), 'SHELL_RUN'],
+    [mutate('workflow', '          path: grl-target',
+      '          repository: owner/other\n          path: grl-target'), 'STAGE2_CREDENTIAL'],
+    [mutate('workflow', '          path: grl-target',
+      '          repository: ${{ vars.STAGE2_REPOSITORY }}\n          path: grl-target'), 'STAGE2_CREDENTIAL'],
+    [{ ...source, runtimeSources: [...source.runtimeSources,
+      "const stage2Token = process.env.GRL_STAGE2_TOKEN;\n"] }, 'STAGE2_CREDENTIAL'],
     [mutate('workflow', 'timeout-minutes: 10',
       'retention-days: 4\n    timeout-minutes: 10'), 'ARTIFACT_RETENTION']
   ];
