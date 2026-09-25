@@ -1,6 +1,6 @@
 # CURRENT — github-runner-local
 
-Updated: 2026-09-25. Phase: **C_REVIEW_READY + E_RE3_REVIEW_READY**.
+Updated: 2026-09-25. Phase: **C_REVIEW_READY + E_PASS_MERGE_READY**.
 
 ## Authority
 
@@ -8,127 +8,76 @@ Updated: 2026-09-25. Phase: **C_REVIEW_READY + E_RE3_REVIEW_READY**.
 - Control Tower: Issue #1.
 - Owner authorization for C source: Issue #1 comment `5811504614`.
 - Owner authorization for E source/template: Issue #1 comment `5811700793`.
-- Opus plan: Issue #2 comment `5807784901`.
-- CT plan review: Issue #2 comment `5807941253`.
-- Current handoff: `docs/control-tower/handoffs/GRL-20260925-C-REVIEW-READY-E-RE3-REVIEW-READY-V20.md`.
-- Required sentinel: `END_OF_GRL_HANDOFF key=GRL-20260925-C-REVIEW-READY-E-RE3-REVIEW-READY-V20 sections=10`.
+- Current handoff: `docs/control-tower/handoffs/GRL-20260925-C-REVIEW-READY-E-PASS-MERGE-READY-V21.md`.
+- Required sentinel: `END_OF_GRL_HANDOFF key=GRL-20260925-C-REVIEW-READY-E-PASS-MERGE-READY-V21 sections=8`.
 
 ## Checkpoint C
 
-Issue #10 / GRL-009 remains independently review-ready.
+Issue #10 / PR #12 remains independently review-ready.
 
-DRAFT PR #12:
-- branch `feat/grl-c-device-runner-package`
-- exact head `67dd220771bf67f65348e622998e005bf30b26bc`
+- branch: `feat/grl-c-device-runner-package`
+- exact head: `67dd220771bf67f65348e622998e005bf30b26bc`
 - open / draft / unmerged
-- implementation handoff `5813138169`
-- worker release `5813145195`
-- independent review packet `5825315282`
+- review packet: Issue #10 `5825315282`
 
-C worker evidence:
-- Core 192/192
-- Presentation 45/45
-- Integration 45/45
-- zero skipped
-- Windows RunnerContractProbe PASS
-- runner v2.337.0 exact pin/hash verified
+No C merge before independent PASS.
 
-No independent C review result has been published yet.
+## Checkpoint E
 
-## Checkpoint E review lineage
+Issue #11 / PR #13.
 
-Issue #11 / GRL-010.
+Exact passing head:
+`e2fb5a3152998990ea12e92be4aef921d1d19387`.
 
-SAME DRAFT PR #13 / branch:
-`feat/grl-e-execution-template`.
-
-Original independent review:
-- `5824543363` → `NEEDS_E_CORRECTION`
-- R-E-1 / R-E-2 / R-E-3
-
-First correction:
-- packet `5824981620`
-- corrected head `855bd3342376ca7695a7d19d119d578986d09c2f`
-- handoff `5825291040`
-- release `5825294298`
-
-First correction rereview:
-- `5825400160` → `NEEDS_E_CORRECTION_AGAIN`
+Independent rereview:
+- result `5825645126`
+- release `5825647808`
+- disposition `PASS_E_RE3_CORRECTION_EXACT_HEAD`
+- findings = 0
 - R-E-1 CLOSED
 - R-E-2 CLOSED
-- R-E-3 remained OPEN
+- R-E-3 CLOSED
 
-Second correction:
-- packet `5825431498`
-- old head `855bd3342376ca7695a7d19d119d578986d09c2f`
-- new exact head `e2fb5a3152998990ea12e92be4aef921d1d19387`
-- handoff `5825526198`
-- worker release `5825529400`
-
-## E second correction scope
-
-Second correction changed exactly:
-- `templates/execution-repo/tools/lint.mjs`
-- `templates/execution-repo/tests/lint.test.mjs`
-
-Full PR remains exactly 33 template-only paths.
-
-Worker-local proof at `e2fb5a3...`:
+Independent reproduction:
 - Node v24.14.1
 - 108 passed / 0 failed / 0 skipped
-- real linter PASS
+- linter PASS
 - schema mirrors PASS
 - PASS fixture PASS
 - FAIL fixture expected FAIL
-- E-B1 refusal BLOCKED / zero processes
-- old R-E-1/R-E-2 targeted regressions PASS
-- exact prior multiRepoToken / GRL_MULTI_REPO_TOKEN + authenticated other-repository API mutation now returns `STAGE2_CREDENTIAL`
-- representative crossRepo / multi-repo PAT / generic PAT + other-repository API mutations reject
-- baseline legitimate Stage-1 source passes
-- `git diff --check` clean
+- E-B1 refusal BLOCKED / zero profile processes
+- targeted R-E-1 2/2
+- targeted R-E-2 8/8
+- exact former multiRepoToken/API bypass and requested variants reject
+- full PR remains 33 template-only paths
 
-## E independent rereview gate
+PR #13 remains open/draft/unmerged. Fresh metadata reports mergeable=true.
 
-Durable rereview packet:
-Issue #11 `5825573159`.
+## Merge gate
 
-Exact review target:
-`e2fb5a3152998990ea12e92be4aef921d1d19387`.
+E is now review-clean and may enter a separate owner/CT merge action.
 
-A DIFFERENT independent reviewer must:
-- verify R-E-3 closure;
-- confirm R-E-1/R-E-2 remain closed;
-- verify exact two-file correction delta;
-- independently rerun real linter/mutation proofs and full source campaign where possible;
-- publish one exact-head disposition;
-- release and stop.
-
-No E merge before independent PASS.
+Before any merge:
+- fresh-check exact PR #13 head remains `e2fb5a3...`;
+- fresh-check mergeability and claims;
+- no hosted Actions;
+- no activation as part of merge;
+- preserve exact reviewed head with SHA guard.
 
 ## Activation boundaries
 
-Still forbidden:
+Still forbidden without separate owner authorization:
 - private execution repo creation/use;
 - live template activation;
 - GitHub Actions dispatch/rerun;
 - runner registration/start;
 - Stage-2 implementation/credentials;
-- GitHub App creation/live login unless separately authorized;
+- GitHub App creation/live login;
 - D/G1/service/UAC/release work.
-
-## Open gates
-
-D09 / OD-1 private execution repo: OPEN.
-D10 / OD-2 GitHub App creation/visibility: OPEN.
-D21 Stage-2 credentials: OPEN.
-D12 service identity/helper: OPEN.
-D15 license/signing: OPEN.
 
 ## Next
 
-C and E may be independently reviewed in parallel.
+1. Run independent C review on PR #12 using packet `5825315282`.
+2. Separately, owner/CT may authorize and perform exact-head merge of E PR #13.
+3. After C PASS, C gets its own separate merge gate.
 
-- C reviewer takes packet `5825315282` against PR #12 head `67dd220771bf67f65348e622998e005bf30b26bc`.
-- DIFFERENT E reviewer takes packet `5825573159` against PR #13 head `e2fb5a3152998990ea12e92be4aef921d1d19387`.
-
-After either result, Primary CT fresh-checks claims/refs and updates continuity. Merge nothing without PASS.
