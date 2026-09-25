@@ -242,7 +242,7 @@ public sealed class PortableLifecycleTests
         var process = new FakeProcess { FailConfigure = true };
         using var lifecycle = NewLifecycle(admin, process);
         await Assert.ThrowsAsync<RunnerProcessException>(() => lifecycle.RegisterAndStartAsync(2, TimeSpan.Zero, default));
-        Assert.Equal(PortableRunnerState.Degraded, lifecycle.State);
+        Assert.Equal(PortableRunnerState.RemoteRemovalPending, lifecycle.State);
         Assert.DoesNotContain("SECRET", string.Join(' ', lifecycle.Journal));
         Assert.Equal(0, process.StartCount);
     }
@@ -255,7 +255,7 @@ public sealed class PortableLifecycleTests
         using var lifecycle = NewLifecycle(admin, process);
         await Assert.ThrowsAsync<RunnerProcessException>(() => lifecycle.RegisterAndStartAsync(2, TimeSpan.Zero, default));
         Assert.Contains(lifecycle.Journal, x => x.State == PortableRunnerState.Configured);
-        Assert.Equal(PortableRunnerState.Degraded, lifecycle.State);
+        Assert.Equal(PortableRunnerState.RemoteRemovalPending, lifecycle.State);
         Assert.DoesNotContain("SECRET", string.Join(' ', lifecycle.Journal));
         Assert.False(lifecycle.HasOwnedProcess);
         await lifecycle.UnregisterAsync(1, TimeSpan.Zero, default);
@@ -555,18 +555,16 @@ public sealed class PortableLifecycleTests
         Assert.Equal(PortableRunnerFailure.IdentityUncertain, busyError.Failure);
         Assert.Equal(0, busyAdmin.RemoveTokenRequests);
 
-        var survivorAdmin = new FakeAdmin { Lists = Pages([], [Runner(9, false)], [Runner(9, true)]) };
-        var survivorProcess = new FakeProcess();
+        var survivorAdmin = new FakeAdmin { Lists = Pages([], [Runner(9, false)]) };
+        var survivorProcess = new FakeProcess { StartException = new InvalidOperationException("unknown start outcome") };
         using var survivor = NewLifecycle(survivorAdmin, survivorProcess);
-        await survivor.RegisterAndStartAsync(1, TimeSpan.Zero, default);
-        survivorProcess.Owned.ExitIndependently();
-        await survivor.GetRemoteStatusAsync(default);
-        // Simulate loss of current process ownership while the lifecycle still has survivor evidence.
-        survivorProcess.Owned.ResetExitForTest();
-        using var cancellation = new CancellationTokenSource();
-        cancellation.Cancel();
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
-            survivor.ResumeAsync(1, TimeSpan.Zero, cancellation.Token));
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            survivor.RegisterAndStartAsync(1, TimeSpan.Zero, default));
+        Assert.False(survivor.HasOwnedProcess);
+        var survivorError = await Assert.ThrowsAsync<PortableRunnerException>(() =>
+            survivor.UnregisterAsync(1, TimeSpan.Zero, default));
+        Assert.Equal(PortableRunnerFailure.PossibleSurvivingProcess, survivorError.Failure);
+        Assert.Equal(0, survivorAdmin.RemoveTokenRequests);
     }
 
     [Fact]
@@ -695,6 +693,7 @@ public sealed class PortableLifecycleTests
         public bool FailConfigure { get; set; }
         public bool FailStart { get; set; }
         public Exception? ConfigureException { get; set; }
+        public Exception? StartException { get; set; }
         public int StartCount { get; private set; }
         public int VerifyCount { get; private set; }
         public Task ExecuteAsync(RunnerCommand command, CancellationToken ct)
@@ -716,6 +715,7 @@ public sealed class PortableLifecycleTests
             StartCount++;
             StartedCommands.Add(command);
             StartVersions.Add(verifiedVersion);
+            if (StartException is not null) throw StartException;
             if (FailStart) throw new RunnerProcessException(RunnerProcessFailure.StartupFailed, "Start failed.");
             Assert.Equal(RunnerPin.ReviewedVersion, verifiedVersion);
             Owned = new FakeOwned();
