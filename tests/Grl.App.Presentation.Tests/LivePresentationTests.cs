@@ -138,6 +138,39 @@ public sealed class LivePresentationTests
     }
 
     [Fact]
+    public async Task ResumeVersionDriftShowsSpecificFailClosedErrorWithoutStateAdvance()
+    {
+        var adapter = new SafeLiveFake { ResumeErrorCode = "RUNNER_VERSION_UNSUPPORTED" };
+        var session = NewLive(adapter, WizardState.RunnerPaused);
+
+        await session.ExecuteUserCommandAsync(WizardEvent.Resume);
+
+        Assert.Equal(WizardState.RunnerPaused, session.State);
+        Assert.Equal("RUNNER_VERSION_UNSUPPORTED", session.ActiveError?.Code);
+        Assert.Contains("self-updated", session.ErrorWhatHappened, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(1, adapter.ResumeCount);
+    }
+
+    [Fact]
+    public async Task EvidenceBlockedRecoveryDoesNotSuggestBlindRetry()
+    {
+        var adapter = new SafeLiveFake
+        {
+            PendingRecovery = true,
+            RemoveErrorCode = "DISCONNECT_IDENTITY_BLOCKED"
+        };
+        var session = NewLive(adapter, WizardState.RunnerDegraded);
+
+        await session.RecoverAsync();
+
+        Assert.Equal(WizardState.DisconnectRemotePending, session.State);
+        Assert.Equal("DISCONNECT_IDENTITY_BLOCKED", session.ActiveError?.Code);
+        Assert.Contains("Do not keep retrying", session.ErrorNextStep, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Settings > Actions > Runners", session.ErrorNextStep, StringComparison.Ordinal);
+        Assert.Equal(1, adapter.RemoveCount);
+    }
+
+    [Fact]
     public async Task LiveStatusRefreshShowsBusyAndIdleWithoutSimulationControls()
     {
         var adapter = new SafeLiveFake { RefreshEvent = WizardEvent.JobStarted };
@@ -195,6 +228,8 @@ public sealed class LivePresentationTests
         public bool HasPendingRecovery => PendingRecovery;
         public WizardState? InstallErrorState { get; set; }
         public string InstallErrorCode { get; set; } = "INSTALL_CONFIGURE_FAILED";
+        public string? ResumeErrorCode { get; set; }
+        public string? RemoveErrorCode { get; set; }
         public WizardEvent RemoveEvent { get; set; } = WizardEvent.RemoteRemoved;
         public Task<WizardEvent> CheckAsync() => Task.FromResult(WizardEvent.Passed);
         public Task<DeviceCodeDisplay> IssueCodeAsync() => Task.FromResult(
@@ -228,9 +263,19 @@ public sealed class LivePresentationTests
         }
         public Task<WizardEvent> StartAsync() { StartCount++; return Task.FromResult(WizardEvent.Online); }
         public Task DrainAsync() { DrainCount++; return Task.CompletedTask; }
-        public Task ResumeAsync() { ResumeCount++; return Task.CompletedTask; }
+        public Task ResumeAsync()
+        {
+            ResumeCount++;
+            if (ResumeErrorCode is not null) throw new AdapterOperationException(ResumeErrorCode);
+            return Task.CompletedTask;
+        }
         public Task StopNowAsync() { StopCount++; Owned = false; return Task.CompletedTask; }
         public Task<AdapterResult> RefreshAsync(WizardState state) => Task.FromResult(new AdapterResult(RefreshEvent));
-        public Task<WizardEvent> RemoveAsync() { RemoveCount++; return Task.FromResult(RemoveEvent); }
+        public Task<WizardEvent> RemoveAsync()
+        {
+            RemoveCount++;
+            if (RemoveErrorCode is not null) throw new AdapterOperationException(RemoveErrorCode);
+            return Task.FromResult(RemoveEvent);
+        }
     }
 }
