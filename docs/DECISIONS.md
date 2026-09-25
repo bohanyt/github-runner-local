@@ -12,8 +12,8 @@ Use `ACCEPTED` only for explicit owner direction or an approved technical decisi
 | D06 | ACCEPTED | GitHub request/result bridge; no direct chat-to-PC shell. |
 | D07 | ACCEPTED | Publish continuity + rough design, then independent Opus 5.5 planning. Completed by plan comment `5807784901`. |
 | D08 | ACCEPTED | Portable/trusted-code mode first; service/elevated-helper mode is deferred until after portable acceptance and a separate privilege/ACL review. |
-| D09 | OPEN | Dedicated private execution repo is the reviewed default, but owner approval is required before creation. Existing project repos are not silently reused. |
-| D10 | OPEN | GitHub App device-flow auth is the reviewed default; owner must approve App creation and acceptance-stage visibility. Public App visibility is not yet approved. |
+| D09 | ACCEPTED | Owner approved a dedicated private execution repo for first live acceptance: `bohanyt/github-runner-local-exec`. Existing project repos must not be silently reused. Source: owner approval in chat, durably packeted as Issue #14 / GRL-011 on 2026-09-25. |
+| D10 | ACCEPTED | Owner approved an owner-only GitHub App for acceptance with Device Flow enabled. It is not approved for public distribution yet. Runtime Client ID may be supplied to the wizard; no client secret/private key belongs in the product. Source: owner approval in chat, durably packeted as Issue #14 / GRL-011 on 2026-09-25. |
 | D11 | PROPOSED | .NET 10 core now; WPF self-contained x64 shell is the reviewed later checkpoint-B direction, subject to Windows proof. |
 | D12 | OPEN | Service identity/protected helper location/ACLs remain deferred. No elevated helper may live in a job-writable path. |
 | D13 | PROPOSED | Authenticated issue-comment trigger in a later private execution repo; must prove actual connector event delivery and default-branch workflow behavior. |

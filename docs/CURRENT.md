@@ -1,102 +1,104 @@
 # CURRENT — github-runner-local
 
-Updated: 2026-09-25. Phase: **C_MERGED + E_MERGED + LIVE_GATES_PENDING**.
+Updated: 2026-09-25. Phase: **C_MERGED + E_MERGED + OD1_OD2_APPROVED + LIVE_BOOTSTRAP_WAITING_OWNER_UI**.
 
 ## Authority
 
 - Canonical branch: `main`.
 - Control Tower: Issue #1.
-- Current handoff: `docs/control-tower/handoffs/GRL-20260925-C-E-MERGED-LIVE-GATES-PENDING-V24.md`.
-- Required sentinel: `END_OF_GRL_HANDOFF key=GRL-20260925-C-E-MERGED-LIVE-GATES-PENDING-V24 sections=7`.
+- Current handoff: `docs/control-tower/handoffs/GRL-20260925-OD1-OD2-APPROVED-LIVE-BOOTSTRAP-V25.md`.
+- Required sentinel: `END_OF_GRL_HANDOFF key=GRL-20260925-OD1-OD2-APPROVED-LIVE-BOOTSTRAP-V25 sections=8`.
 
-## Checkpoint C
+## Merged source checkpoints
 
-Issue #10 / former PR #12.
+Checkpoint C:
+- passing head `c062957407acf8f7d70c46767345e85c737f39f4`
+- independent PASS `5826166918`
+- merge commit `451d3ab889f9f63f45ebf90ba54ddece7b60e6eb`
 
-Independent passing head:
-`c062957407acf8f7d70c46767345e85c737f39f4`.
+Checkpoint E:
+- passing head `e2fb5a3152998990ea12e92be4aef921d1d19387`
+- independent PASS `5825645126`
+- merge commit `a296f3f9dfa362f6a53d20ff81a46eef7a519819`
 
-Independent correction rereview:
-- result `5826166918`
-- release `5826169745`
-- disposition `PASS_C_CORRECTION_EXACT_HEAD`
-- findings = 0
-- R-C-1 / R-C-2 / R-C-3 CLOSED
+Post-merge continuity before OD approvals:
+`2c1c90b061c2fada6055f71bab6575809315018c`.
 
-Merged with normal merge commit and expected-head guard.
+## Owner-approved live gates
 
-PR #12 merge commit:
-`451d3ab889f9f63f45ebf90ba54ddece7b60e6eb`.
+D09 / OD-1: **ACCEPTED**.
 
-## Checkpoint E
+Dedicated private execution repository for first live acceptance:
+`bohanyt/github-runner-local-exec`.
 
-Issue #11 / former PR #13.
+Do not reuse an existing project repository.
 
-Independent passing head:
-`e2fb5a3152998990ea12e92be4aef921d1d19387`.
+D10 / OD-2: **ACCEPTED**.
 
-Independent rereview:
-- result `5825645126`
-- release `5825647808`
-- disposition `PASS_E_RE3_CORRECTION_EXACT_HEAD`
-- findings = 0
-- R-E-1 / R-E-2 / R-E-3 CLOSED
+Acceptance GitHub App:
+- owner-only/private acceptance use;
+- Device Flow enabled;
+- not public for general distribution yet;
+- runtime Client ID is allowed;
+- no client secret/private key in product source or execution repo.
 
-Merged with normal merge commit and expected-head guard.
+Durable packet:
+Issue #14 — `GRL-011 — Live acceptance bootstrap: owner-only GitHub App + private execution repo`.
 
-PR #13 merge commit:
-`a296f3f9dfa362f6a53d20ff81a46eef7a519819`.
+## Manual prerequisite state
 
-## Current main
+The connected GitHub toolset can mutate existing repositories but does not expose:
+- creation of a new repository;
+- registration/creation of a GitHub App.
 
-Post-merge source main before this continuity update:
-`a296f3f9dfa362f6a53d20ff81a46eef7a519819`.
+Therefore the owner must create these account-level objects in GitHub UI:
 
-Both reviewed source checkpoints are now integrated into main.
+1. private repo exactly `bohanyt/github-runner-local-exec`;
+2. owner-only GitHub App with Device Flow enabled.
 
-## Evidence
+Proposed App display name:
+`github-runner-local-dev`.
 
-C:
-- build 0 warnings / 0 errors
-- Core 192/192
-- Presentation 45/45
-- Integration 68/68
-- targeted 23/23
-- read-only runner probe PASS
-- runner v2.337.0 exact pin/hash verified
+After creation, provide the App Client ID (not a secret) or state that both objects exist.
 
-E:
-- 108 passed / 0 failed / 0 skipped
-- real linter PASS
-- schema mirrors PASS
-- PASS/FAIL fixtures correct
-- E-B1 zero-process BLOCKED
-- reviewed Stage-2 guard mutations reject
+## Still-open gates
 
-Evidence remains source/local proof. No live production acceptance has occurred.
+D21 / Stage-2 multi-repo checkout credential authority: **OPEN**.
 
-## Live gates still OPEN
+Also still gated:
+- D12 service identity/helper;
+- D15 license/signing;
+- public GitHub App distribution;
+- service/UAC mode;
+- release work.
 
-Do NOT silently cross these gates:
+First live acceptance remains same-execution-repo only.
 
-- D09 / OD-1: private execution repository creation/use
-- D10 / OD-2: GitHub App creation/visibility/live login
-- D21: Stage-2 credentials / multi-repo authority
-- D12: service identity/helper
-- D15: signing/license/release policy
+## No-hosted-Actions constraint
 
-Also not yet authorized:
-- runner registration/start
-- live template activation
-- GitHub Actions dispatch/rerun
-- D / G1 live acceptance
-- service/UAC/release work
+D19 remains ACCEPTED:
+**do not use GitHub-hosted Actions**.
+
+First live acceptance must execute only on the reviewed self-hosted Windows runner path.
+
+## Live bootstrap packet
+
+Issue #14 defines the bounded next path:
+- verify private execution repo;
+- verify owner-only Device-Flow App;
+- materialize reviewed execution template;
+- perform owner Device Flow;
+- select only the private execution repo;
+- register one portable non-admin runner;
+- run only harmless same-repo fixture acceptance;
+- collect evidence and stop.
+
+No Stage-2 cross-repo credentials or workload checkout are allowed.
 
 ## Next
 
-Primary next decision is owner authorization for the live path:
-1. resolve OD-2 GitHub App/live-login choice;
-2. resolve OD-1 private execution repo creation/use;
-3. then dispatch the bounded live D/G1 path while preserving the no-hosted-Actions constraint.
+Owner completes the two GitHub UI prerequisites from Issue #14.
 
-No further source merge is pending for C or E.
+Then Primary CT fresh-verifies available repository/App evidence and publishes the bounded D/G1 live-execution packet.
+
+No further C/E source merge is pending.
