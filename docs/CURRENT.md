@@ -1,100 +1,49 @@
 # CURRENT — github-runner-local
 
-Updated: 2026-09-25. Phase: **OFFICE_D_G1_READY**.
+Updated: 2026-09-25. Phase: **D_SOURCE_IMPLEMENTATION_READY; OFFICE_G1_GATED**.
 
 ## Authority
 
 - Canonical branch: `main`.
-- Control Tower: Issue #1.
-- Current handoff: `docs/control-tower/handoffs/GRL-20260925-OFFICE-D-G1-READY-V26.md`.
-- Required sentinel: `END_OF_GRL_HANDOFF key=GRL-20260925-OFFICE-D-G1-READY-V26 sections=8`.
+- Control Tower: Issue #1; owner-designated successor CT claim `5826687223`.
+- Current handoff: `docs/control-tower/handoffs/GRL-20260925-D-SOURCE-PENDING-OFFICE-G1-GATED-V27.md`.
+- Required sentinel: `END_OF_GRL_HANDOFF key=GRL-20260925-D-SOURCE-PENDING-OFFICE-G1-GATED-V27 sections=8`.
 
-## Merged source checkpoints
+## Merged checkpoints
 
-Checkpoint C and E are merged and independently review-clean.
+Checkpoint C and E are independently review-clean and merged:
+- C merge: `451d3ab889f9f63f45ebf90ba54ddece7b60e6eb`.
+- E merge: `a296f3f9dfa362f6a53d20ff81a46eef7a519819`.
 
-C merge:
-`451d3ab889f9f63f45ebf90ba54ddece7b60e6eb`.
+Checkpoint B still composes fake preview adapters. Production runner lifecycle and live wizard integration are NOT merged.
 
-E merge:
-`a296f3f9dfa362f6a53d20ff81a46eef7a519819`.
+## Owner-approved live target
 
-## Live prerequisites
+- OD-1/D09: private execution repo `bohanyt/github-runner-local-exec`, private and default `main` as last verified.
+- OD-2/D10: owner-only acceptance GitHub App, Device Flow enabled; runtime Client ID recorded on Issue #14; App installation settings owner-attested.
+- OD-7/D29: current OFFICE WINDOWS LAPTOP is approved for the first portable, unelevated, trusted-code-only G1 runner `grl-office`.
+- D30: only AFTER G1 PASS may the PERSONAL laptop be enrolled as `grl-personal`; if both share `grl-exec`, exactly ONE runner process is active at a time. Credentials are never copied.
 
-OD-1 / D09: ACCEPTED.
-- private execution repo: `bohanyt/github-runner-local-exec`
-- independently verified private / default branch `main`
+These approvals remain valid; they do not prove that a live runner exists.
 
-OD-2 / D10: ACCEPTED.
-- owner-only acceptance GitHub App
-- Device Flow enabled
-- not public yet
-- owner supplied runtime Client ID in Issue #14
-- installation setup is owner-attested because connector cannot inspect private App settings
+## Active task: Checkpoint D source
 
-OD-7 / D29: ACCEPTED.
-- current OFFICE WINDOWS LAPTOP authorized for first live portable enrollment / G1
-- runner name: `grl-office`
-- portable, interactive-user, non-admin
-- trusted-code-only
-- same execution repo fixture only
+Issue #16 `GRL-013 — Checkpoint D source: portable runner lifecycle + live wizard adapters` is the active bounded source implementation task. Follow its full body and CT batch-launch clarification comment `5826696683`.
 
-## Conditional second runner
+One implementation worker claims Issue #1, creates branch `feat/grl-d-portable-lifecycle`, implements within Issue #16's allowlist, performs deterministic and Windows read-only proof, opens ONE DRAFT PR, posts Issue #16 handoff, releases and stops. No self-review or merge.
 
-D30: ACCEPTED, but only after G1 PASS.
+A different independent reviewer is required at exact head. CT handles any correction and merge gate separately.
 
-Future personal runner:
-`grl-personal`.
+## Deferred live task: office G1
 
-Both may remain registered to the same private execution repo, but while they share `grl-exec` the operating rule is:
+Issue #15 `GRL-012 — Live D/G1 office-laptop portable enrollment` is **GATED** until D source is implemented, independently reviewed and merged. The V26 instruction to run Issue #15 immediately is superseded. Do not substitute manual shell registration for the missing product.
 
-**ONE ACTIVE AT A TIME.**
+After the D merge, CT must fresh-read authority and exact main, then dispatch the bounded local office-laptop G1 witness. Evidence cannot advance to `WINDOWS_TESTED` before actual live acceptance.
 
-Do not enroll the personal laptop before G1 PASS.
+## Standing boundaries
 
-## Live D/G1 packet
-
-Issue #15:
-`GRL-012 — Live D/G1 office-laptop portable enrollment`.
-
-That packet authorizes the bounded live steps:
-- bootstrap reviewed execution template into private repo;
-- create/configure mailbox issue + repository variables;
-- real owner Device Flow;
-- select exact private execution repo;
-- download/verify/install reviewed runner;
-- register `grl-office`;
-- start portable runner unelevated;
-- run harmless same-repo fixture acceptance;
-- run bounded safe negative witnesses;
-- publish evidence and stop.
-
-## Still forbidden
-
-- Stage-2 / cross-repo checkout or credential minting
-- GitHub-hosted Actions
-- service mode / elevated helper / UAC path
-- public GitHub App distribution
-- arbitrary shell inbox
-- external/unreviewed project code
-- personal-laptop enrollment before G1 PASS
-- release/signing work
-
-## Evidence target
-
-G1 is not complete until actual live evidence exists.
-
-Source/local proofs remain green but do not substitute for:
-- real Device Flow witness
-- runner online witness
-- self-hosted workflow run
-- request/ACK/result/verdict round trip
-- safe negative witnesses
+No GitHub-hosted Actions; no Stage-2/cross-repo credentials or workload; no public App distribution; no service/UAC/elevated helper; no arbitrary shell inbox; no personal-laptop enrollment before G1 PASS; no signing/release.
 
 ## Next
 
-Run one bounded LOCAL worker on the CURRENT OFFICE LAPTOP using Issue #15.
-
-Worker must claim, execute only the authorized D/G1 packet, publish exact evidence, release, and stop.
-
-No self-declared PASS without the actual live witness.
+Dispatch one Checkpoint D source implementation worker on Issue #16. The worker must not execute Issue #15 during source development.
