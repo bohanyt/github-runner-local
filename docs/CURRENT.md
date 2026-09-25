@@ -1,6 +1,6 @@
 # CURRENT — github-runner-local
 
-Updated: 2026-09-25. Phase: **C_REVIEW_READY + E_NEEDS_CORRECTION**.
+Updated: 2026-09-25. Phase: **C_REVIEW_READY + E_CORRECTION_REVIEW_READY**.
 
 ## Authority
 
@@ -10,8 +10,8 @@ Updated: 2026-09-25. Phase: **C_REVIEW_READY + E_NEEDS_CORRECTION**.
 - Owner authorization for E source/template: Issue #1 comment `5811700793`.
 - Opus plan: Issue #2 comment `5807784901`.
 - CT plan review: Issue #2 comment `5807941253`.
-- Current handoff: `docs/control-tower/handoffs/GRL-20260925-C-REVIEW-READY-E-NEEDS-CORRECTION-V17.md`.
-- Required sentinel: `END_OF_GRL_HANDOFF key=GRL-20260925-C-REVIEW-READY-E-NEEDS-CORRECTION-V17 sections=10`.
+- Current handoff: `docs/control-tower/handoffs/GRL-20260925-C-REVIEW-READY-E-CORRECTION-REVIEW-READY-V18.md`.
+- Required sentinel: `END_OF_GRL_HANDOFF key=GRL-20260925-C-REVIEW-READY-E-CORRECTION-REVIEW-READY-V18 sections=10`.
 
 ## Checkpoint C
 
@@ -34,74 +34,66 @@ C worker evidence:
 
 No independent C review result has been published yet.
 
-Latest connector metadata returned PR #12 mergeable=false; treat that as a fresh-check item, not authority to repair or merge. No C merge is authorized before independent PASS.
+Fresh connector metadata currently reports PR #12 mergeable=true. This does not authorize merge; fresh-check again before any later merge action and require independent PASS first.
 
-## Checkpoint E candidate and review
+## Checkpoint E corrected candidate
 
 Issue #11 / GRL-010.
 
-DRAFT PR #13:
+SAME DRAFT PR #13:
 - branch `feat/grl-e-execution-template`
-- exact reviewed head `b23d37c4f0367d5311502d2cf80e31453a884d1d`
+- old reviewed head `b23d37c4f0367d5311502d2cf80e31453a884d1d`
+- corrected exact head `855bd3342376ca7695a7d19d119d578986d09c2f`
 - open / draft / unmerged
-- 33 template-only paths
-- implementation handoff `5824305934`
-- implementation release `5824311312`
+- full PR remains exactly 33 template-only paths
+- fresh connector metadata currently reports mergeable=true
 
-Independent review:
-- claim `5824425643`
-- review result `5824543363`
+Prior independent review:
+- result `5824543363`
 - release `5824545439`
 - disposition `NEEDS_E_CORRECTION`
-- blockers: `R-E-1`, `R-E-2`, `R-E-3`
+- blockers `R-E-1`, `R-E-2`, `R-E-3`
 
-## E correction packet
+Correction:
+- CT packet `5824981620`
+- worker claim `5825042626`
+- correction handoff `5825291040`
+- worker release `5825294298`
+- old→new delta exactly six authorized files
 
-CT correction packet:
-Issue #11 comment `5824981620`.
+Corrected-head worker-local proof:
+- Node v22.16.0
+- 106 passed / 0 failed / 0 skipped
+- real linter PASS
+- schema mirrors byte-for-byte PASS
+- PASS fixture 1 process / PASS
+- FAIL fixture 1 process / expected FAIL
+- E-B1 refusal 0 profile processes / BLOCKED
+- targeted R-E-1/R-E-2/R-E-3 regressions PASS
+- `git diff --check` PASS
 
-SAME branch / SAME DRAFT PR #13 only.
+## E correction rereview
 
-Old reviewed head:
-`b23d37c4f0367d5311502d2cf80e31453a884d1d`.
+Independent rereview packet:
+Issue #11 comment `5825299636`.
 
-Correction write scope is exactly six files:
-- `templates/execution-repo/lib/execution.mjs`
-- `templates/execution-repo/tests/execution.test.mjs`
-- `templates/execution-repo/lib/admission.mjs`
-- `templates/execution-repo/tests/admission.test.mjs`
-- `templates/execution-repo/tools/lint.mjs`
-- `templates/execution-repo/tests/lint.test.mjs`
+Exact rereview target:
+`855bd3342376ca7695a7d19d119d578986d09c2f`.
 
-Everything else is frozen.
+The rereviewer must be DIFFERENT from the correction worker and Control Tower, fresh-claim on Issue #1, independently verify all three original findings are closed, publish one exact-head disposition on Issue #11, release, and stop.
 
-## E correction requirements
-
-R-E-1:
-- JUnit must not ignore later suites;
-- TRX must not silently ignore timeout/aborted/notRunnable or contradictory counters;
-- fail closed; add explicit regressions.
-
-R-E-2:
-- reconciliation dedupe trusts only exact, strict, bot-authored reconciliation notes;
-- human/malformed/extra-field/wrong-identity notes cannot suppress durable reconciliation.
-
-R-E-3:
-- linter catches named-step shell `run:`, extra workflow triggers, literal/expression repository overrides, and Stage-2 credential behavior in executable local source;
-- add real negative mutation tests.
-
-Full Node/test/lint/schema/PASS/FAIL/E-B1/diff proof is required on corrected exact head.
+Do not merge E before independent PASS.
 
 ## Activation boundaries
 
 Still forbidden:
 - private execution repo creation/use;
 - live template activation;
-- GitHub Actions dispatch;
+- GitHub Actions dispatch/rerun;
 - runner registration/start;
 - Stage-2 credentials;
-- GitHub App/live login unless separately authorized;
-- D/G1/service/release work.
+- GitHub App creation/live login unless separately authorized;
+- D/G1/service/UAC/release work.
 
 ## Open gates
 
@@ -113,7 +105,8 @@ D15 license/signing: OPEN.
 
 ## Next
 
-Primary next action: one bounded local implementation worker takes the E correction packet `5824981620`, posts a fresh correction claim, fixes exactly R-E-1/R-E-2/R-E-3 in the six authorized files, runs full local proof, pushes SAME branch/PR #13, publishes correction handoff, releases, and stops.
+Primary next action: one DIFFERENT independent E correction rereviewer follows Issue #11 packet `5825299636` against exact head `855bd3342376ca7695a7d19d119d578986d09c2f`.
 
-In parallel, a separate independent reviewer may still review exact C PR #12. After E correction, a different independent reviewer performs exact-head E correction rereview.
+In parallel, a separate independent reviewer may review exact C PR #12 head `67dd220771bf67f65348e622998e005bf30b26bc`.
 
+After either result, Primary Control Tower fresh-checks refs/claims and records the exact disposition. Merge nothing without independent PASS.
