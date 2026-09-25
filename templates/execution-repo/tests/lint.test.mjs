@@ -6,15 +6,13 @@ import { fileURLToPath } from 'node:url';
 import { lintSource, lintTemplate } from '../tools/lint.mjs';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
-const runtimeSources = [
-  readFileSync(resolve(root, '.github/actions/grl-admit/main.mjs'), 'utf8'),
-  readFileSync(resolve(root, '.github/actions/grl-report/main.mjs'), 'utf8'),
-  readFileSync(resolve(root, '.github/actions/grl-run-profile/main.mjs'), 'utf8'),
-  readFileSync(resolve(root, '.github/actions/grl-verdict/main.mjs'), 'utf8'),
+const runtimePaths = [
+  ...['grl-admit', 'grl-report', 'grl-run-profile', 'grl-verdict']
+    .map(name => `.github/actions/${name}/main.mjs`),
   ...['action-io.mjs', 'admission.mjs', 'execution.mjs', 'github-api.mjs',
-    'protocol.mjs', 'reporting.mjs', 'system-adapter.mjs']
-    .map(name => readFileSync(resolve(root, 'lib', name), 'utf8'))
+    'protocol.mjs', 'reporting.mjs', 'system-adapter.mjs'].map(name => `lib/${name}`)
 ];
+const runtimeSources = runtimePaths.map(path => readFileSync(resolve(root, path), 'utf8'));
 const source = {
   workflow: readFileSync(resolve(root, '.github/workflows/grl-dispatch.yml'), 'utf8').replaceAll('\r\n', '\n'),
   profiles: [readFileSync(resolve(root, 'profiles/js-smoke.json'))],
@@ -26,10 +24,23 @@ const source = {
 };
 const mutate = (field, before, after) => ({ ...source,
   [field]: typeof source[field] === 'string' ? source[field].replace(before, after) : after });
+const appendRuntime = (path, snippet) => {
+  const index = runtimePaths.indexOf(path);
+  assert.ok(index >= 0);
+  return { ...source, runtimeSources: runtimeSources.map((text, i) =>
+    i === index ? text + '\n' + snippet : text) };
+};
 
 test('unaltered template passes lint and schema mirror check', () => {
   assert.deepEqual(lintSource(source), []);
   assert.deepEqual(lintTemplate(root), []);
+});
+
+test('legitimate current-repository Stage-1 GitHubApi remains allowed', () => {
+  const githubApi = runtimeSources[runtimePaths.indexOf('lib/github-api.mjs')];
+  assert.ok(githubApi.includes('Authorization:'));
+  assert.ok(githubApi.includes('/repos/${this.repository}'));
+  assert.deepEqual(lintSource(source), []);
 });
 
 test('linter rejects workflow trigger, permission, prefilter and runner regressions', () => {
@@ -70,6 +81,35 @@ test('linter rejects action, checkout, shell, Stage-2 and retention regressions'
   ];
   for (const [candidate, code] of cases)
     assert.ok(lintSource(candidate).includes(code), code);
+});
+
+test('real executable-source mutations reject multi-repository credentials and API access', () => {
+  const cases = [
+    ['exact reviewer mutation', `
+const multiRepoToken = process.env.GRL_MULTI_REPO_TOKEN;
+await fetch("https://api.github.com/repos/owner/other/contents/file", {
+  headers: { Authorization: "Bearer " + multiRepoToken }
+});`],
+    ['cross-repository token', `
+const crossRepoToken = process.env.CROSS_REPO_TOKEN;
+await fetch("https://api.github.com/repos/team/other/issues", {
+  headers: { Authorization: "Bearer " + crossRepoToken }
+});`],
+    ['multi-repository PAT', `
+const multiRepoPat = process.env.MULTI_REPO_PAT;
+await fetch("https://api.github.com/repos/team/other/statuses/abc", {
+  headers: { Authorization: "Bearer " + multiRepoPat }
+});`],
+    ['literal other-repository API with generic PAT', `
+const pat = process.env.GH_PAT;
+await fetch("https://api.github.com/repos/owner/other/contents/file", {
+  headers: { Authorization: "Bearer " + pat }
+});`]
+  ];
+  for (const [name, snippet] of cases) {
+    const candidate = appendRuntime('lib/system-adapter.mjs', snippet);
+    assert.ok(lintSource(candidate).includes('STAGE2_CREDENTIAL'), name);
+  }
 });
 
 test('linter rejects profile, dependency, schema drift, scope and E-B1 routing regressions', () => {

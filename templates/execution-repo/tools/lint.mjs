@@ -50,9 +50,13 @@ export function lintSource({ workflow, profiles, runAction, reportLibrary,
   requireText(!/^\s*(?:-\s*)?run\s*:/m.test(workflow), 'SHELL_RUN');
   requireText(!/installation\.token|private\.key|APP_PRIVATE_KEY|STAGE.?2/i.test(workflow),
     'STAGE2_CREDENTIAL');
-  const runtimeText = runtimeSources.join('\n');
-  requireText(!/(?:STAGE.?2|APP[_-]?PRIVATE[_-]?KEY|installation(?:Token|_token|\W+token)|multi.?repo.?credential|cross.?repo.?credential|repository[_-]?token)/i.test(runtimeText),
-    'STAGE2_CREDENTIAL');
+  const knownStage2 = /(?:STAGE.?2|APP[_-]?PRIVATE[_-]?KEY|installation(?:Token|_token|\W+token)|multi.?repo.?credential|cross.?repo.?credential|repository[_-]?token)/i;
+  const namedRepoCredential = /(?:multi|cross|target)[_-]?repo(?:sitory)?[_-]?(?:access[_-]?)?(?:token|pat|credential(?:s)?|auth|key)/i;
+  const literalRepoApi = /(?:https:\/\/api\.github\.com)?\/repos\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?:\/|["'`])/i;
+  const authenticated = /\bAuthorization\s*[:=]|\bBearer\b/i;
+  requireText(!runtimeSources.some(source => knownStage2.test(source) ||
+    namedRepoCredential.test(source) ||
+    (literalRepoApi.test(source) && authenticated.test(source))), 'STAGE2_CREDENTIAL');
   for (const match of workflow.matchAll(/retention-days:\s*(\d+)/g))
     requireText(Number(match[1]) <= 3, 'ARTIFACT_RETENTION');
   requireText(/report:\s*\r?\n\s+needs:\s*\[admit, execute\]/.test(workflow) &&
