@@ -38,6 +38,8 @@ Use `ACCEPTED` only for explicit owner direction or an approved technical decisi
 | D31 | ACCEPTED | CT technical safety decision for D source: automatic safe Drain is unavailable under the reviewed pinned portable runner contract. `DrainAsync`/UI must fail closed without terminating the runner; unregister may not implicitly drain/stop an active process. Explicit Stop Now warns that it can cancel active or newly assigned work and only targets a product-owned process. Source: Issue #16 CT correction packet `5828534853`; independent review and G1 remain gated. |
 | D32 | OPEN | A supported admission fence, job completion proof and exact-identity switching protocol for office/personal one-active-at-a-time operation remain unproved. Design Issue #18; no automatic switching or personal activation under the D source correction. Owner's conditional D30 authorization remains valid after G1 PASS. |
 
+| D33 | ACCEPTED | Owner environment constraint: no cloud Windows environment is available for this project in the foreseeable future. D source correction worker may implement/test on cloud/Linux with exact limits reported; independent source review may be `WINDOWS_PENDING`. Before D merge or G1 activation, required read-only source/build/test/probe proof must run on the current office Windows laptop, followed by separate live G1. No Windows evidence may be inferred from Linux results. Source: owner direction in chat on 2026-09-25; Issue #16 sequencing addendum `5829054146`. |
+
 ## Corrections to earlier exploratory conversation
 
 - Runner labels select among accessible runners; they do not make a repository registration account-wide.
