@@ -1,0 +1,42 @@
+{
+  "schema_version": "grl.result.v0",
+  "example_only": true,
+  "request_id": "b70dfe32-244d-4b79-a781-523a0b828447",
+  "target": {
+    "repository": "example/private-fixture",
+    "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "tested_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "workflow_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "profile": {
+    "id": "smoke-fixture",
+    "definition_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "execution_status": "PASS",
+  "reporting_status": "COMPLETE",
+  "run": {
+    "repository": "example/private-fixture",
+    "id": 123456789,
+    "job_id": 987654321,
+    "attempt": 1
+  },
+  "runner": {
+    "name": "example-laptop",
+    "os": "Windows",
+    "architecture": "X64",
+    "elevated": false
+  },
+  "checks": [
+    {
+      "name": "invented-smoke",
+      "exit_code": 0,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0
+    }
+  ],
+  "artifacts": [],
+  "notes": [
+    "INVENTED EXAMPLE ONLY. No tests or real GitHub job are represented."
+  ]
+}
