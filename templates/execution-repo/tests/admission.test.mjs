@@ -5,6 +5,8 @@ import { ACK_MARKER, RESULT_MARKER, fenced } from '../lib/protocol.mjs';
 import { A, B, bodyDigest, canonicalResult, context, event, fakeApi, fakeSystem, identity,
   profileBytes, profilePolicies, request } from './helpers.mjs';
 
+const RECONCILE_MARKER = '<!-- grl-reconcile v1 -->';
+
 async function attempt(evt = event(request()), modify = () => {}) {
   const api = fakeApi(evt);
   const system = fakeSystem();
@@ -111,19 +113,60 @@ test('active ACK is not reconciled; concluded missing result is classified', asy
   { outcome: 'INTERRUPTED', reportingComplete: false });
 });
 
-test('bounded reconciliation posts one note and does not duplicate it', async () => {
+function reconcileNote(ack, overrides = {}) {
+  return {
+    schema_version: 'grl.reconcile.v1',
+    request_id: ack.request_id,
+    run_id: ack.run.id,
+    run_attempt: ack.run.attempt,
+    outcome: 'INTERRUPTED',
+    ...overrides
+  };
+}
+
+function setupReconcile() {
   const api = fakeApi();
   const ack = { ...identity(), admitted: true };
   api.comments = [{ body: fenced(ACK_MARKER, ack, 4096),
     user: { login: 'github-actions[bot]' } }];
   api.run = { concluded: true, conclusion: 'cancelled' };
+  return { api, ack };
+}
+
+test('bounded reconciliation posts one strict bot note and does not duplicate it', async () => {
+  const { api, ack } = setupReconcile();
   const notes = await reconcileRecent({ api, mailboxIssue: 7, since: '2026-09-23T12:00:00Z' });
   assert.equal(notes.length, 1);
   assert.equal(notes[0].outcome, 'INTERRUPTED');
   assert.equal(api.posted.length, 1);
-  api.comments.push(api.posted[0]);
+  api.comments.push({ ...api.posted[0], user: { login: 'github-actions[bot]' } });
   assert.equal((await reconcileRecent({ api, mailboxIssue: 7,
     since: '2026-09-23T12:00:00Z' })).length, 0);
+  assert.deepEqual(parseMarkedComment(api.posted[0].body, RECONCILE_MARKER), reconcileNote(ack));
+});
+
+test('reconciliation dedupe ignores non-bot, malformed, extra-field and wrong-identity notes', async t => {
+  const cases = [
+    ['non-bot', note => ({ body: fenced(RECONCILE_MARKER, note, 2048),
+      user: { login: 'owner' } })],
+    ['malformed', () => ({ body: RECONCILE_MARKER + '\n```json\n{bad}\n```',
+      user: { login: 'github-actions[bot]' } })],
+    ['extra field', note => ({ body: fenced(RECONCILE_MARKER, { ...note, extra: true }, 2048),
+      user: { login: 'github-actions[bot]' } })],
+    ['wrong request', note => ({ body: fenced(RECONCILE_MARKER,
+      { ...note, request_id: 'other' }, 2048), user: { login: 'github-actions[bot]' } })],
+    ['wrong run', note => ({ body: fenced(RECONCILE_MARKER,
+      { ...note, run_id: 999 }, 2048), user: { login: 'github-actions[bot]' } })],
+    ['wrong attempt', note => ({ body: fenced(RECONCILE_MARKER,
+      { ...note, run_attempt: 2 }, 2048), user: { login: 'github-actions[bot]' } })]
+  ];
+  for (const [name, build] of cases) await t.test(name, async () => {
+    const { api, ack } = setupReconcile();
+    api.comments.push(build(reconcileNote(ack)));
+    const notes = await reconcileRecent({ api, mailboxIssue: 7, since: '2026-09-23T12:00:00Z' });
+    assert.equal(notes.length, 1);
+    assert.equal(api.posted.length, 1);
+  });
 });
 
 test('durable refusal marker makes missing publication REPORTING_INCOMPLETE', async () => {
