@@ -6,10 +6,14 @@ import { validateProfile } from '../lib/protocol.mjs';
 import { schemaDrift } from './schema-check.mjs';
 
 export function lintSource({ workflow, profiles, runAction, reportLibrary,
-  verdictAction, changedPaths = [], drift = [] }) {
+  verdictAction, runtimeSources = [], changedPaths = [], drift = [] }) {
   const errors = [];
   const requireText = (condition, code) => { if (!condition) errors.push(code); };
-  requireText(/^on:\s*\r?\n\s+issue_comment:\s*\r?\n\s+types:\s*\[created\]/m.test(workflow), 'TRIGGER');
+
+  const onBlock = /^on:\s*\r?\n([\s\S]*?)(?=^permissions:)/m.exec(workflow)?.[1] ?? '';
+  requireText(/^\s{2}issue_comment:\s*\r?\n\s{4}types:\s*\[created\]\s*$/m.test(onBlock) &&
+    !/^\s{2}(?!issue_comment:)[A-Za-z0-9_-]+:\s*/m.test(onBlock), 'TRIGGER');
+
   requireText(/^permissions:\s*\{\s*\}$/m.test(workflow), 'TOP_PERMISSIONS');
   const admit = /\n  admit:\s*\r?\n([\s\S]*?)(?=\n  execute:)/.exec(workflow)?.[1] ?? '';
   for (const fragment of [
@@ -39,10 +43,15 @@ export function lintSource({ workflow, profiles, runAction, reportLibrary,
   const checkoutBlocks = workflow.split(/(?=^\s+- uses: )/m)
     .filter(x => /uses: actions\/checkout@/.test(x));
   requireText(checkoutBlocks.length >= 4, 'CHECKOUT_COUNT');
-  for (const block of checkoutBlocks)
+  for (const block of checkoutBlocks) {
     requireText(/persist-credentials:\s*false/.test(block), 'CHECKOUT_CREDENTIALS');
-  requireText(!/^\s+-\s+run:/m.test(workflow), 'SHELL_RUN');
-  requireText(!/\brepository:\s*\$\{\{|installation.token|private.key|APP_PRIVATE_KEY|STAGE.?2/i.test(workflow),
+    requireText(!/^\s+repository\s*:/m.test(block), 'STAGE2_CREDENTIAL');
+  }
+  requireText(!/^\s*(?:-\s*)?run\s*:/m.test(workflow), 'SHELL_RUN');
+  requireText(!/installation\.token|private\.key|APP_PRIVATE_KEY|STAGE.?2/i.test(workflow),
+    'STAGE2_CREDENTIAL');
+  const runtimeText = runtimeSources.join('\n');
+  requireText(!/(?:STAGE.?2|APP[_-]?PRIVATE[_-]?KEY|installation(?:Token|_token|\W+token)|multi.?repo.?credential|cross.?repo.?credential|repository[_-]?token)/i.test(runtimeText),
     'STAGE2_CREDENTIAL');
   for (const match of workflow.matchAll(/retention-days:\s*(\d+)/g))
     requireText(Number(match[1]) <= 3, 'ARTIFACT_RETENTION');
@@ -92,11 +101,17 @@ export function lintTemplate(templateRoot) {
   const workflow = readFileSync(resolve(templateRoot, '.github/workflows/grl-dispatch.yml'), 'utf8');
   const profiles = readdirSync(resolve(templateRoot, 'profiles')).filter(x => x.endsWith('.json'))
     .map(x => readFileSync(resolve(templateRoot, 'profiles', x)));
+  const actionMain = name => readFileSync(resolve(templateRoot, '.github/actions', name, 'main.mjs'), 'utf8');
+  const runAction = actionMain('grl-run-profile');
+  const reportLibrary = readFileSync(resolve(templateRoot, 'lib/reporting.mjs'), 'utf8');
+  const verdictAction = actionMain('grl-verdict');
+  const runtimeSources = [
+    actionMain('grl-admit'), actionMain('grl-report'), runAction, verdictAction,
+    ...readdirSync(resolve(templateRoot, 'lib')).filter(x => x.endsWith('.mjs'))
+      .map(x => readFileSync(resolve(templateRoot, 'lib', x), 'utf8'))
+  ];
   return lintSource({
-    workflow, profiles,
-    runAction: readFileSync(resolve(templateRoot, '.github/actions/grl-run-profile/main.mjs'), 'utf8'),
-    reportLibrary: readFileSync(resolve(templateRoot, 'lib/reporting.mjs'), 'utf8'),
-    verdictAction: readFileSync(resolve(templateRoot, '.github/actions/grl-verdict/main.mjs'), 'utf8'),
+    workflow, profiles, runAction, reportLibrary, verdictAction, runtimeSources,
     changedPaths: changedPaths(resolve(templateRoot, '../..')),
     drift: schemaDrift(templateRoot)
   });
