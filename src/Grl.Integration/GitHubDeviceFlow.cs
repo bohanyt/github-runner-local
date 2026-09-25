@@ -88,6 +88,7 @@ public sealed class GitHubDeviceFlow
         {
             Content = new FormUrlEncodedContent(new Dictionary<string, string> { ["client_id"] = clientId })
         };
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         using var response = await SendAsync(request, cancellationToken);
         using var body = await ReadJsonAsync(response, cancellationToken);
         if (!response.IsSuccessStatusCode)
@@ -122,6 +123,7 @@ public sealed class GitHubDeviceFlow
                         ["grant_type"] = "urn:ietf:params:oauth:grant-type:device_code"
                     })
                 };
+                request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
                 using var response = await SendAsync(request, cancellationToken);
                 using var body = await ReadJsonAsync(response, cancellationToken);
                 var root = body.RootElement;

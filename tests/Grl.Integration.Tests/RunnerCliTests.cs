@@ -53,6 +53,18 @@ public sealed class RunnerCliTests
     }
 
     [Fact]
+    public void ConfigurationDisplayRedactsRegistrationToken()
+    {
+        const string sentinel = "registration-token-sentinel";
+        var configuration = new RunnerConfiguration(
+            new Uri("https://github.com/owner/execution"), sentinel, "runner-1", "grl-exec", "w");
+        var cli = RunnerCliContract.Verify("2.337.0", Help);
+
+        Assert.DoesNotContain(sentinel, configuration.ToString());
+        Assert.Contains(sentinel, cli.BuildConfigure(configuration).Arguments);
+    }
+
+    [Fact]
     public void InvalidRepositoryOrWorkPathRefusesCommand()
     {
         var cli = RunnerCliContract.Verify("2.337.0", Help);

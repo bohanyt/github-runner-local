@@ -33,6 +33,20 @@ public sealed class DeviceFlowTests
     }
 
     [Fact]
+    public async Task BothOAuthPostsRequestJson()
+    {
+        var handler = new QueueHandler(Json(Device), Json(Success));
+        var flow = new GitHubDeviceFlow(new HttpClient(handler), "runtime-client", new RecordingDelay());
+        using var authorization = await flow.RequestDeviceCodeAsync(default);
+        using var token = await flow.PollForTokenAsync(authorization, default);
+
+        Assert.Equal("https://github.com/login/device/code", handler.RequestUris[0]);
+        Assert.Contains("application/json", handler.AcceptTypes[0]);
+        Assert.Equal("https://github.com/login/oauth/access_token", handler.RequestUris[1]);
+        Assert.Contains("application/json", handler.AcceptTypes[1]);
+    }
+
+    [Fact]
     public async Task PendingThenSuccessPreservesInterval()
     {
         var (flow, delay) = Flow(Json(Device), Json("""{"error":"authorization_pending"}""", HttpStatusCode.BadRequest), Json(Success));
@@ -192,9 +206,11 @@ public sealed class DeviceFlowTests
         public List<string> Bodies { get; } = [];
         public List<string?> Authorization { get; } = [];
         public List<string> RequestUris { get; } = [];
+        public List<string[]> AcceptTypes { get; } = [];
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             RequestUris.Add(request.RequestUri!.ToString());
+            AcceptTypes.Add(request.Headers.Accept.Select(x => x.MediaType ?? "").ToArray());
             Bodies.Add(request.Content is null ? "" : await request.Content.ReadAsStringAsync(cancellationToken));
             Authorization.Add(request.Headers.Authorization?.Scheme);
             return queue.Dequeue();

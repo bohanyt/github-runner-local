@@ -26,7 +26,10 @@ public sealed record RunnerCapabilities(string Version, IReadOnlySet<string> Opt
 
 public sealed record RunnerConfiguration(
     Uri RepositoryUrl, string RegistrationToken, string Name, string Labels, string WorkDirectory,
-    bool Ephemeral = false, bool NoDefaultLabels = false);
+    bool Ephemeral = false, bool NoDefaultLabels = false)
+{
+    public override string ToString() => "RunnerConfiguration [registration token redacted]";
+}
 
 public interface IRunnerCli
 {

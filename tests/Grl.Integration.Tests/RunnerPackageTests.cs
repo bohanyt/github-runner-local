@@ -53,6 +53,55 @@ public sealed class RunnerPackageTests
     }
 
     [Theory]
+    [InlineData("COM\u00B9")]
+    [InlineData("COM\u00B2")]
+    [InlineData("COM\u00B3")]
+    [InlineData("LPT\u00B9")]
+    [InlineData("LPT\u00B2")]
+    [InlineData("LPT\u00B3")]
+    [InlineData("COM\u00B9.txt")]
+    [InlineData("COM\u00B2.txt")]
+    [InlineData("COM\u00B3.txt")]
+    [InlineData("LPT\u00B9.log")]
+    [InlineData("LPT\u00B2.log")]
+    [InlineData("LPT\u00B3.log")]
+    [InlineData("nested/COM\u00B9/child.txt")]
+    [InlineData("nested/COM\u00B2/child.txt")]
+    [InlineData("nested/COM\u00B3/child.txt")]
+    [InlineData("nested/LPT\u00B9/child.txt")]
+    [InlineData("nested/LPT\u00B2/child.txt")]
+    [InlineData("nested/LPT\u00B3/child.txt")]
+    public async Task SuperscriptDeviceAliasIsRejectedWithoutEscapingOwnedRoot(string name)
+    {
+        using var temp = new TempRoot();
+        var ownedRoot = Directory.CreateDirectory(Path.Combine(temp.Path, "owned")).FullName;
+        var outside = Path.Combine(temp.Path, "outside.txt");
+        File.WriteAllText(outside, "keep");
+        var zip = Zip(("good.txt", "good"), (name, "bad"));
+
+        var error = await Assert.ThrowsAsync<RunnerPackageException>(() => Install(zip, Hash(zip), ownedRoot));
+
+        Assert.Equal(RunnerPackageFailure.UnsafeArchive, error.Failure);
+        Assert.False(Path.Exists(Path.Combine(ownedRoot, "runner")));
+        Assert.Empty(Directory.GetFileSystemEntries(ownedRoot));
+        Assert.Equal("keep", File.ReadAllText(outside));
+    }
+
+    [Theory]
+    [InlineData("SOM\u00B9.txt")]
+    [InlineData("COM\u2074.txt")]
+    [InlineData("LPT\u00E9.txt")]
+    public async Task UnrelatedUnicodeNamesRemainAllowed(string name)
+    {
+        using var temp = new TempRoot();
+        var zip = Zip((name, "allowed"));
+
+        var result = await Install(zip, Hash(zip), temp.Path);
+
+        Assert.Equal("allowed", File.ReadAllText(Path.Combine(result.FinalRoot, name)));
+    }
+
+    [Theory]
     [InlineData(false)]
     [InlineData(true)]
     public async Task SymlinkAndReparseEntriesAreRejected(bool unixSymlink)

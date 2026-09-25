@@ -226,7 +226,7 @@ public sealed class RunnerPackageInstaller(RunnerPackageLimits? limits = null)
             baseName.Equals("CONOUT$", StringComparison.OrdinalIgnoreCase) ||
             (baseName.Length == 4 && (baseName.StartsWith("COM", StringComparison.OrdinalIgnoreCase) ||
                                       baseName.StartsWith("LPT", StringComparison.OrdinalIgnoreCase)) &&
-             baseName[3] is >= '1' and <= '9');
+             "123456789\u00B9\u00B2\u00B3".Contains(baseName[3]));
     }
 
     private static void EnsureChild(string root, string path)
