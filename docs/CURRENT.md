@@ -21,13 +21,13 @@ Blocked correction handoff Issue #16 `5828419459` established that pinned runner
 
 ## Active task: revised bounded correction
 
-Issue #16 CT packet `5828534853` supersedes the prior correction packet where they conflict. ONE worker uses SAME branch/PR, starting from unchanged head, within the existing D source/test allowlist. Correct R-D-1 by disabling unsafe automatic Drain and implicit stop during unregister; correct R-D-2 with accessible live UI recovery and non-secret pending/cleanup path. Run deterministic race/recovery proof plus Windows restore/build/twice tests and read-only witness. Publish exact-head handoff and release. DIFFERENT independent reviewer must rereview; no merge yet.
+Issue #16 CT packet `5828534853` plus product-gap addendum `5828855949` govern ONE worker on the SAME branch/PR from the unchanged head and within the original D source/test allowlist. Correct R-D-1 by disabling unsafe automatic Drain/implicit stop, including register/resume failure catches; correct R-D-2 with accessible live recovery and bounded persisted non-secret state on reopen; supply E-required runner version/identity metadata at child start; show truthful live UI. Run permanent race/recovery/integration regressions plus Windows restore/build/twice tests and read-only witness. Publish exact-head handoff and release. DIFFERENT independent reviewer must rereview; no merge yet. Advisory product audit Issue #1 `5828798876` is source-only; it is not a G1 or review PASS.
 
 ## Owner-approved live topology and gate
 
 OD-1/D09 private execution repo `bohanyt/github-runner-local-exec`; OD-2/D10 owner-only Device Flow App; OD-7/D29 office Windows laptop `grl-office` approved for first portable unelevated trusted-code-only G1. D30 conditionally authorizes `grl-personal` after G1 PASS with one matching `grl-exec` runner active at a time.
 
-Issue #15 G1 remains GATED until source correction, independent exact-head PASS and separate CT/owner merge. Issue #15 clarification `5828537511` forbids implicit Stop Now/unregister on active process during failed enrollment. G1 execution does not prove a safe two-laptop switch; Issue #18 tracks that separate procedure.
+Issue #15 G1 remains GATED until source correction, independent exact-head PASS and separate CT/owner merge. Clarifications `5828537511` and `5828862963` prevent implicit Stop Now/unregister, require all four E template variables, local Git/App permission checks and one staged office G1 runbook. The private execution repo still has only README and no active workflow. G1 does not prove a safe two-laptop switch; Issue #18 plus addendum `5828869070` tracks a request-level admission fence and tests the server-side DELETE/422+self-exit hypothesis separately. D30 remains conditional; neither server behavior nor personal activation is approved as witnessed.
 
 ## Standing boundaries
 
@@ -35,4 +35,4 @@ No GitHub-hosted Actions; live login/runner registration/start or private templa
 
 ## Next
 
-Dispatch one bounded D fail-closed correction worker from Issue #16 `5828534853`. CT then arranges a different independent exact-head reviewer and handles a separate merge/G1 gate.
+Dispatch one bounded D fail-closed correction worker using Issue #16 `5828534853` **and addendum `5828855949`** on the same draft PR. CT then arranges a different independent exact-head reviewer and handles a separate merge/G1 gate. No extra planning round before this correction.
