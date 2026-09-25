@@ -82,12 +82,30 @@ test('missing or invalid test report after process execution remains FAIL data',
     { passed: 0, failed: 0, skipped: 0, errored: 1, source: 'unavailable' });
 });
 
-test('JUnit and TRX counters are parsed without external packages', () => {
+test('JUnit aggregates all suites and rejects contradictory aggregate counters', () => {
   assert.deepEqual(parseJUnit('<testsuite tests="4" failures="1" errors="1" skipped="1"></testsuite>'),
     { passed: 1, failed: 1, skipped: 1, errored: 1, source: 'junit' });
-  assert.deepEqual(parseTrx('<Counters total="4" passed="1" failed="1" error="1" notExecuted="1" />'),
-    { passed: 1, failed: 1, skipped: 1, errored: 1, source: 'trx' });
+  const multi = '<testsuites tests="3" failures="1" errors="1" skipped="0">' +
+    '<testsuite tests="1" failures="0" errors="0" skipped="0"></testsuite>' +
+    '<testsuite tests="2" failures="1" errors="1" skipped="0"></testsuite></testsuites>';
+  assert.deepEqual(parseJUnit(multi),
+    { passed: 1, failed: 1, skipped: 0, errored: 1, source: 'junit' });
   assert.throws(() => parseJUnit('<testsuite tests="1" failures="2"></testsuite>'));
+  assert.throws(() => parseJUnit('<testsuites tests="2" failures="0" errors="0" skipped="0">' +
+    '<testsuite tests="1" failures="0"></testsuite>' +
+    '<testsuite tests="1" failures="1"></testsuite></testsuites>'));
+});
+
+test('TRX counters fail closed for non-passing terminals and contradictions', () => {
+  assert.deepEqual(parseTrx('<Counters total="4" executed="3" completed="3" passed="1" failed="1" error="1" notExecuted="1" />'),
+    { passed: 1, failed: 1, skipped: 1, errored: 1, source: 'trx' });
+  for (const name of ['timeout', 'aborted', 'notRunnable'])
+    assert.throws(() => parseTrx(`<Counters total="2" passed="1" notExecuted="0" ${name}="1" />`),
+      { code: 'INVALID_TRX' });
+  assert.throws(() => parseTrx('<Counters total="2" passed="1" failed="0" error="0" notExecuted="0" />'),
+    { code: 'INVALID_TRX' });
+  assert.throws(() => parseTrx('<Counters total="1" passed="1" mystery="1" />'),
+    { code: 'INVALID_TRX' });
 });
 
 test('result size is bounded to 32 KiB', async () => {
