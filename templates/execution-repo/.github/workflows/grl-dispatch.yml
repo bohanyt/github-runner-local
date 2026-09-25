@@ -1,0 +1,137 @@
+name: GRL dispatch
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions: {}
+
+jobs:
+  admit:
+    if: >-
+      github.event.issue.number == fromJSON(vars.GRL_MAILBOX_ISSUE) &&
+      github.event.issue.pull_request == null &&
+      contains(fromJSON(vars.GRL_AUTHORIZED_ACTORS), github.event.comment.user.login) &&
+      github.event.comment.author_association == 'OWNER' &&
+      startsWith(github.event.comment.body, '<!-- grl-request v1 -->')
+    runs-on: [self-hosted, Windows, X64, grl-exec]
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+      actions: read
+      statuses: read
+    outputs:
+      admitted: ${{ steps.admit.outputs.admitted }}
+      identity_b64: ${{ steps.admit.outputs.identity_b64 }}
+      target_sha: ${{ steps.admit.outputs.target_sha }}
+      timeout_minutes: ${{ steps.admit.outputs.timeout_minutes }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - id: admit
+        uses: ./.github/actions/grl-admit
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          mailbox-issue: ${{ vars.GRL_MAILBOX_ISSUE }}
+          authorized-actors: ${{ vars.GRL_AUTHORIZED_ACTORS }}
+          allowed-branches: ${{ vars.GRL_ALLOWED_BRANCHES }}
+          reserve-gib: ${{ vars.GRL_DISK_RESERVE_GIB }}
+
+  execute:
+    needs: admit
+    if: needs.admit.outputs.admitted == 'true'
+    runs-on: [self-hosted, Windows, X64, grl-exec]
+    timeout-minutes: ${{ fromJSON(needs.admit.outputs.timeout_minutes) }}
+    permissions:
+      contents: read
+    outputs:
+      result_b64: ${{ steps.run-profile.outputs.result_b64 }}
+      outcome_b64: ${{ steps.run-profile.outputs.outcome_b64 }}
+      execution_status: ${{ steps.run-profile.outputs.execution_status }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          path: grl-trusted
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ needs.admit.outputs.target_sha }}
+          path: grl-target
+          persist-credentials: false
+      - id: run-profile
+        uses: ./grl-trusted/.github/actions/grl-run-profile
+        with:
+          identity-b64: ${{ needs.admit.outputs.identity_b64 }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: grl-execution-outcome-${{ github.run_id }}
+          path: grl-outcome
+          retention-days: 3
+          if-no-files-found: warn
+          overwrite: true
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: steps.run-profile.outputs.execution_status == 'BLOCKED'
+        with:
+          name: grl-exec-refusal-${{ github.run_id }}-${{ github.run_attempt }}
+          path: grl-outcome/refusal.marker
+          retention-days: 3
+          if-no-files-found: error
+          overwrite: true
+
+  report:
+    needs: [admit, execute]
+    if: always() && needs.admit.outputs.admitted == 'true'
+    runs-on: [self-hosted, Windows, X64, grl-exec]
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+      statuses: write
+      actions: read
+    outputs:
+      reporting_complete: ${{ steps.report.outputs.reporting_complete }}
+      execution_status: ${{ steps.report.outputs.execution_status }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        continue-on-error: true
+        with:
+          name: grl-execution-outcome-${{ github.run_id }}
+          path: grl-outcome
+      - id: report
+        uses: ./.github/actions/grl-report
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          mailbox-issue: ${{ vars.GRL_MAILBOX_ISSUE }}
+          identity-b64: ${{ needs.admit.outputs.identity_b64 }}
+          result-b64: ${{ needs.execute.outputs.result_b64 }}
+          outcome-b64: ${{ needs.execute.outputs.outcome_b64 }}
+          outcome-dir: grl-outcome
+
+  verdict:
+    needs: [admit, execute, report]
+    if: always() && needs.admit.result != 'skipped'
+    runs-on: [self-hosted, Windows, X64, grl-exec]
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/grl-verdict
+        with:
+          admitted: ${{ needs.admit.outputs.admitted }}
+          execution-status: ${{ needs.report.outputs.execution_status }}
+          reporting-complete: ${{ needs.report.outputs.reporting_complete }}
+          execute-job-result: ${{ needs.execute.result }}
+          report-job-result: ${{ needs.report.result }}

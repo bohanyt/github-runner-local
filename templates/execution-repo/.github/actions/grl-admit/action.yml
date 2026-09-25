@@ -1,0 +1,16 @@
+name: GRL admit
+description: Strict Stage-1 request admission and bounded ACK
+inputs:
+  token:
+    required: true
+  mailbox-issue:
+    required: true
+  authorized-actors:
+    required: true
+  allowed-branches:
+    required: true
+  reserve-gib:
+    required: true
+runs:
+  using: node20
+  main: main.mjs
