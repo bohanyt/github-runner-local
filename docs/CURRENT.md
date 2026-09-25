@@ -1,27 +1,27 @@
 # CURRENT — github-runner-local
 
-Updated: 2026-09-25. Phase: **D_SOURCE_NEEDS_RD3_RD4_CORRECTION; OFFICE_G1_GATED**.
+Updated: 2026-09-25. Phase: **D_CORRECTION_REREVIEW_AND_WINDOWS_PENDING; OFFICE_G1_GATED**.
 
 ## Authority
 
 - Canonical branch: `main`; owner-designated successor Control Tower coordinates on Issue #1.
-- Current handoff: `docs/control-tower/handoffs/GRL-20260925-D-RD3-RD4-CORRECTION-DISPATCH-V32.md`.
-- Required sentinel: `END_OF_GRL_HANDOFF key=GRL-20260925-D-RD3-RD4-CORRECTION-DISPATCH-V32 sections=6`.
+- Current handoff: `docs/control-tower/handoffs/GRL-20260925-D-RD3-RD4-REREVIEW-WINDOWS-PENDING-V33.md`.
+- Required sentinel: `END_OF_GRL_HANDOFF key=GRL-20260925-D-RD3-RD4-REREVIEW-WINDOWS-PENDING-V33 sections=6`.
 
 ## Source status
 
-C and E are independently reviewed and merged. D is **NOT merged**. SAME DRAFT PR #17, branch `feat/grl-d-portable-lifecycle`, reviewed head `d68fc60e29726df25733acb8f00f3ea3ce104ac6`, source base `be6a34872db8c059de060fafbb4188a0e39e1ce1`, remains open/draft/unmerged at this dispatch. Independent Issue #16 review `5834704379`: **`NEEDS_D_CORRECTION`**. R-D-1 closed; R-D-2 main paths closed; R-D-3 unknown numeric ID strands recovery after partial configure, and R-D-4 stale runner version metadata on Resume block merge.
+C and E are independently reviewed and merged. D is **NOT merged**. SAME DRAFT PR #17 / `feat/grl-d-portable-lifecycle`, current head `69c0b9e267819e11366729805cb61de456b53524`, old reviewed head `d68fc60e29726df25733acb8f00f3ea3ce104ac6`, source base `be6a34872db8c059de060fafbb4188a0e39e1ce1`. Worker R-D-3/R-D-4 correction Issue #16 `5835153272` changed nine allowed paths, fast-forward only, with N-2 close-copy fix. Worker had no .NET/compiler: restore/build/full tests twice and literal `git diff --check` were **NOT RUN**. PR description was updated to remove old Drain/test claims. No independent new-head source verdict exists yet.
 
-Office Windows read-only witness Issue #16 `5834244169` passed at old exact head: restore, warnings-as-errors build, two full 365/365 solution tests, 11/11 BatchBoundary, pinned runner CLI probe. It is non-live `LOCAL_CHECKED` proof, not `WINDOWS_TESTED` real integration; it must be renewed if PR head changes. The earlier count "10 Windows cases excluded" was an error; 11 cases were present and executed on Windows.
+Previous Windows read-only witness `5834244169` passed on **old** `d68fc60` (restore/build, two 365/365 runs, 11/11 BatchBoundary, pinned v2.337.0 CLI probe); it cannot be transferred to new head. Neither witness is real-integration `WINDOWS_TESTED`.
 
-## Active task
+## Active tasks
 
-Issue #16 CT packet `5834758700` dispatches ONE bounded R-D-3/R-D-4 correction worker on the SAME branch/PR, expected old head `d68fc60e29726df25733acb8f00f3ea3ce104ac6`. Worker claims and releases on Issue #1. Only Issue #16 source/test allowlist; no self-review, new PR, force push or merge. Following correction, a different exact-head independent review and a new read-only office Windows proof are required before CT decides a separate merge gate.
+Issue #16 CT packet `5835191415` dispatches a different independent source reviewer for all 21 PR paths/nine correction paths **and** a separate office Windows read-only tester for exact current head. These separate evidence streams may run in parallel, with separate Issue #1 claims and Issue #16 results. Both must pass at unchanged SHA for CT to decide a later merge gate; any failure returns to bounded same-PR correction. No source reviewer self-review and no live action.
 
 ## Live gates
 
-No hosted Actions until owner re-enables. No live login, runner registration/start, private execution-repo activation, or G1 during D source correction. Office `grl-office` is owner approved by OD-7/D29 for later G1 on private `bohanyt/github-runner-local-exec` only after reviewed D merge. Issue #15 G1 remains gated. Conditional post-G1 personal `grl-personal` remains D30 with one active at a time and separately proved switching in Issue #18; safe automatic Drain or server DELETE is unproved.
+No hosted Actions until owner re-enables. No live login, runner registration/start, private execution-repo activation, Stop Now, or G1 under source review. Office `grl-office` is owner approved by OD-7/D29 for later G1 on private `bohanyt/github-runner-local-exec` only after reviewed D merge. G1 Issue #15 must cross-check actual runner log version against E result metadata to detect in-process auto-update. Conditional post-G1 personal `grl-personal` remains D30, one active at a time; switching Issue #18 remains unproved.
 
 ## Next
 
-Run the bounded SAME-PR worker from Issue #16 `5834758700`; CT handles worker handoff, different independent rereview, and fresh Windows read-only evidence on the changed head. No live work or merge now.
+Run independent exact-head review and separate office read-only Windows proof under `5835191415`; CT adjudicates same-head evidence, then decides correction or merge readiness. G1 remains gated.
