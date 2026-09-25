@@ -568,6 +568,64 @@ public sealed class PortableLifecycleTests
     }
 
     [Fact]
+    public async Task ReopenedPersistedIdRemovesThroughRealCompositionOnlyAfterRecheck()
+    {
+        using var root = new FakeRoot();
+        using var store = PortableRecoveryStore.Open(root.Path, "owner/exec", "runner-1");
+        store.Write(42, PortableRunnerState.Configured);
+        var evidence = Assert.IsType<PortableRecoveryEvidence>(store.Read());
+        var admin = new FakeAdmin { Lists = Pages([Runner(42, false)], []) };
+        using var adapter = new LiveWizardAdapters(
+            new LiveRuntimeOptions("clientidxx", "owner/exec", "runner-1", root.Path),
+            admin, store, evidence, new NoDelay());
+
+        var result = await adapter.RemoveAsync();
+
+        Assert.Equal(WizardEvent.RemoteRemoved, result);
+        Assert.Equal(1, admin.DeleteStaleRequests);
+        Assert.Equal(PortableRunnerState.Removed, store.Read()!.State);
+    }
+
+    [Fact]
+    public async Task ReopenedUnknownIdCanResolveUniqueOfflineRunnerBeforeDelete()
+    {
+        using var root = new FakeRoot();
+        using var store = PortableRecoveryStore.Open(root.Path, "owner/exec", "runner-1");
+        store.Write(null, PortableRunnerState.RemoteRemovalPending);
+        var evidence = Assert.IsType<PortableRecoveryEvidence>(store.Read());
+        var admin = new FakeAdmin { Lists = Pages([Runner(55, false)], []) };
+        using var adapter = new LiveWizardAdapters(
+            new LiveRuntimeOptions("clientidxx", "owner/exec", "runner-1", root.Path),
+            admin, store, evidence, new NoDelay());
+
+        var result = await adapter.RemoveAsync();
+
+        Assert.Equal(WizardEvent.RemoteRemoved, result);
+        Assert.Equal(1, admin.DeleteStaleRequests);
+        Assert.Equal(55, store.Read()!.RunnerId);
+        Assert.Equal(PortableRunnerState.Removed, store.Read()!.State);
+    }
+
+    [Fact]
+    public async Task ReopenedSurvivorEvidenceRefusesRemoteDeleteWithoutListing()
+    {
+        using var root = new FakeRoot();
+        using var store = PortableRecoveryStore.Open(root.Path, "owner/exec", "runner-1");
+        store.Write(null, PortableRunnerState.Degraded, mayHaveUnownedProcess: true);
+        var evidence = Assert.IsType<PortableRecoveryEvidence>(store.Read());
+        var admin = new FakeAdmin();
+        using var adapter = new LiveWizardAdapters(
+            new LiveRuntimeOptions("clientidxx", "owner/exec", "runner-1", root.Path),
+            admin, store, evidence, new NoDelay());
+
+        var error = await Assert.ThrowsAsync<AdapterOperationException>(() => adapter.RemoveAsync());
+
+        Assert.Equal("DISCONNECT_PROCESS_UNCERTAIN", error.ErrorCode);
+        Assert.Equal(0, admin.ListCalls);
+        Assert.Equal(0, admin.DeleteStaleRequests);
+    }
+
+    [Fact]
     public async Task ResumeVersionDriftFailsBeforeSecondRunStartOrMetadataInjection()
     {
         var admin = new FakeAdmin { Lists = Pages([], [Runner(1, false)], [Runner(1, true)]) };
