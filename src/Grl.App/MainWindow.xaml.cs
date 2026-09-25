@@ -33,8 +33,13 @@ public partial class MainWindow : Window
                     WizardState.InstallingExtracting or WizardState.InstallingConfiguring))
         {
             e.Cancel = true;
-            MessageBox.Show("Drain, stop now, or unregister the portable runner before closing LIVE setup.",
+            MessageBox.Show("A product-owned runner process is active. Safe Pause is unavailable. Explicit Stop Now may cancel an active or newly assigned job. Closing or crashing the app does not guarantee that the runner stops.",
                 "LIVE runner active", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        else if (DataContext is WizardSession { IsLive: true, HasPendingRecovery: true, State: not WizardState.DisconnectDone })
+        {
+            MessageBox.Show("Registration or removal may remain pending. Closing this window does not clean it up; reopen the same root for exact-identity recovery. A process from an earlier app session may still be running.",
+                "LIVE recovery pending", MessageBoxButton.OK, MessageBoxImage.Information);
         }
     }
 }

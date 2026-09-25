@@ -49,6 +49,7 @@ public sealed class WizardSession : INotifyPropertyChanged
     private readonly AsyncUiCommand _welcomeCommand;
     private readonly AsyncUiCommand _removalCommand;
     private readonly AsyncUiCommand _stopNowCommand;
+    private readonly AsyncUiCommand _recoveryCommand;
     private bool _acknowledged;
     private bool _isWelcome;
     private bool _accountConfirmed;
@@ -86,8 +87,10 @@ public sealed class WizardSession : INotifyPropertyChanged
             () => !_live && !IsWelcome && State is WizardState.RunnerIdle or WizardState.RunnerPaused,
             ShowUnexpectedError);
         _stopNowCommand = new AsyncUiCommand(StopNowAsync,
-            () => _live && !IsWelcome && State is WizardState.RunnerIdle or WizardState.RunnerBusy or WizardState.RunnerDraining,
+            () => _live && !IsWelcome && HasOwnedRunnerProcess,
             ShowUnexpectedError);
+        _recoveryCommand = new AsyncUiCommand(RecoverAsync,
+            () => CanRecover, ShowUnexpectedError);
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -101,6 +104,17 @@ public sealed class WizardSession : INotifyPropertyChanged
     public bool IsLive => _live;
     public string WelcomeContinueLabel => _live ? "_Continue LIVE setup" : "_Continue preview";
     public bool HasOwnedRunnerProcess => _live && _adapters.RunnerController.HasOwnedProcess;
+    public bool HasPendingRecovery => _live && _adapters.Disconnect.HasPendingRecovery;
+    public bool CanRecover => HasPendingRecovery && !HasOwnedRunnerProcess && !IsWelcome &&
+        (State is WizardState.InstallingDownloading or WizardState.InstallingConfiguring or
+            WizardState.RunnerDegraded or WizardState.RunnerPaused or WizardState.DisconnectRemotePending);
+    public string RunnerPresenceText => !_live ? string.Empty : HasOwnedRunnerProcess
+        ? "A product-owned runner process is active. Safe Pause is unavailable. Stop Now may cancel an active or newly assigned job."
+        : State == WizardState.DisconnectDone
+            ? "Exact remote removal was verified in this session. The local root remains for inspection."
+        : HasPendingRecovery
+            ? "No runner process is owned by this window. Registration or a process from an earlier app session may remain; recovery checks the exact remote identity."
+            : "Safe Pause is unavailable. Closing or crashing the app does not guarantee that a runner process stops.";
     public bool ShowAccountConfirmation => _live && State == WizardState.SignInSignedIn;
     public bool ShowTargetConfirmation => _live && State == WizardState.ScopeSelected;
     public bool AccountConfirmed
@@ -139,6 +153,7 @@ public sealed class WizardSession : INotifyPropertyChanged
     public ICommand WelcomeContinueCommand => _welcomeCommand;
     public ICommand PreviewRemovalCommand => _removalCommand;
     public ICommand StopNowCommand => _stopNowCommand;
+    public ICommand RecoveryCommand => _recoveryCommand;
 
     public bool Acknowledged
     {
@@ -161,7 +176,9 @@ public sealed class WizardSession : INotifyPropertyChanged
                 (!_live || !(row.Event == WizardEvent.Cancel && State is
                     WizardState.InstallingDownloading or WizardState.InstallingVerifying or
                     WizardState.InstallingExtracting or WizardState.InstallingConfiguring or
-                    WizardState.RunnerBusy or WizardState.RunnerDraining or WizardState.DisconnectPending)))
+                    WizardState.RunnerBusy or WizardState.RunnerDraining or WizardState.DisconnectPending)) &&
+                (!_live || row.Event != WizardEvent.Drain) &&
+                (!_live || row.Event != WizardEvent.Disconnect || !HasOwnedRunnerProcess))
             .Select(row => row.Event)
             .ToArray();
 
@@ -213,17 +230,12 @@ public sealed class WizardSession : INotifyPropertyChanged
             SetError("INVALID_TRANSITION");
             return;
         }
-        if (_live && action is WizardEvent.Drain or WizardEvent.Resume)
+        if (_live && action == WizardEvent.Resume)
         {
-            try
-            {
-                if (action == WizardEvent.Drain) await _adapters.RunnerController.DrainAsync();
-                else await _adapters.RunnerController.ResumeAsync();
-            }
+            try { await _adapters.RunnerController.ResumeAsync(); }
             catch { SetError("RUNNER_DEGRADED"); return; }
         }
         if (!Apply(action)) return;
-        if (_live && action == WizardEvent.Drain) Apply(WizardEvent.Drained);
         if (action == WizardEvent.Cancel)
         {
             if (State is WizardState.SignInAwaitingCode or WizardState.SignInPolling or WizardState.SignInCancelled)
@@ -236,17 +248,36 @@ public sealed class WizardSession : INotifyPropertyChanged
 
     public async Task StopNowAsync()
     {
-        if (!_live || IsWelcome || State is not (WizardState.RunnerIdle or WizardState.RunnerBusy or WizardState.RunnerDraining))
+        if (!_live || IsWelcome || !HasOwnedRunnerProcess)
         { SetError("INVALID_TRANSITION"); return; }
         try
         {
             await _adapters.RunnerController.StopNowAsync();
             // Stop-now is a separate lifecycle operation absent from the frozen Core table.
-            _machine = new WizardStateMachine(_clock, WizardState.RunnerPaused);
-            _statusText = "LIVE runner stopped now. Only the product-owned process was terminated.";
+            if (State is WizardState.RunnerIdle or WizardState.RunnerBusy or WizardState.RunnerDraining)
+                _machine = new WizardStateMachine(_clock, WizardState.RunnerPaused);
+            _activeError = null;
+            _statusText = "Explicit Stop Now ended the product-owned process. An active or newly assigned job may have been cancelled. Registration may remain.";
             NotifyAll();
         }
         catch { SetError("RUNNER_DEGRADED"); }
+    }
+
+    public async Task RecoverAsync()
+    {
+        if (!CanRecover) { SetError("INVALID_TRANSITION"); return; }
+        try
+        {
+            var result = await _adapters.Disconnect.RemoveAsync();
+            _machine = new WizardStateMachine(_clock, result == WizardEvent.RemoteRemoved
+                ? WizardState.DisconnectDone : WizardState.DisconnectRemotePending);
+            _activeError = result == WizardEvent.RemoteRemoved ? null : LiveErrorCatalog.For("DISCONNECT_REMOTE_UNAVAILABLE");
+            _statusText = result == WizardEvent.RemoteRemoved
+                ? "Exact remote runner removal verified. Local root remains for inspection."
+                : "Removal remains pending. No runner process was stopped or adopted.";
+            NotifyAll();
+        }
+        catch { SetError("DISCONNECT_REMOTE_UNAVAILABLE"); }
     }
 
     public async Task RefreshRunnerStatusAsync()
@@ -438,12 +469,16 @@ public sealed class WizardSession : INotifyPropertyChanged
     {
         var enabled = EnabledUserCommands;
         var primary = enabled.FirstOrDefault(action => action != WizardEvent.Cancel);
-        return enabled.Select(action => new UiAction(
+        var actions = enabled.Select(action => new UiAction(
             LabelFor(action), CurrentPage.Title + " " + action,
             new AsyncUiCommand(() => ExecuteUserCommandAsync(action),
                 () => !_isWelcome && EnabledUserCommands.Contains(action), ShowUnexpectedError),
             IsPrimary: action == primary && action != WizardEvent.Cancel,
-            IsCancel: action == WizardEvent.Cancel)).ToArray();
+            IsCancel: action == WizardEvent.Cancel)).ToList();
+        if (CanRecover)
+            actions.Add(new UiAction("_Recover / remove exact runner", "Recover exact runner registration",
+                _recoveryCommand));
+        return actions;
     }
 
     private IReadOnlyList<UiAction> BuildSimulationActions() =>
@@ -501,6 +536,7 @@ public sealed class WizardSession : INotifyPropertyChanged
         {
             nameof(IsWelcome), nameof(IsInWizard), nameof(State), nameof(CurrentPage),
             nameof(IsLive), nameof(IsPreview), nameof(HasOwnedRunnerProcess), nameof(WelcomeContinueLabel),
+            nameof(HasPendingRecovery), nameof(CanRecover), nameof(RunnerPresenceText),
             nameof(ShowAccountConfirmation), nameof(ShowTargetConfirmation),
             nameof(AccountConfirmed), nameof(TargetConfirmed),
             nameof(Journal), nameof(StatusText), nameof(DeviceCodeText), nameof(SignedInAccountText), nameof(PreflightReasonText),
@@ -513,6 +549,7 @@ public sealed class WizardSession : INotifyPropertyChanged
         _welcomeCommand.Refresh();
         _removalCommand.Refresh();
         _stopNowCommand.Refresh();
+        _recoveryCommand.Refresh();
     }
 
     private void Changed(string name) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));

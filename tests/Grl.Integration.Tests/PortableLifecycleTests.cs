@@ -1,4 +1,5 @@
 using System.Net;
+using System.Diagnostics;
 using System.Text;
 using Grl.Integration;
 
@@ -237,7 +238,7 @@ public sealed class PortableLifecycleTests
     [Fact]
     public async Task ConfigureFailureRecordsSafeCompensation()
     {
-        var admin = new FakeAdmin { Lists = Pages([], []) };
+        var admin = new FakeAdmin { Lists = Pages(Array.Empty<RepositoryRunner>()) };
         var process = new FakeProcess { FailConfigure = true };
         using var lifecycle = NewLifecycle(admin, process);
         await Assert.ThrowsAsync<RunnerProcessException>(() => lifecycle.RegisterAndStartAsync(2, TimeSpan.Zero, default));
@@ -249,59 +250,70 @@ public sealed class PortableLifecycleTests
     [Fact]
     public async Task RunStartupFailureLeavesConfiguredEvidenceWithoutToken()
     {
-        var admin = new FakeAdmin { Lists = Pages([], []) };
+        var admin = new FakeAdmin { Lists = Pages([], [Runner(1, false)], [Runner(1, false)], []) };
         var process = new FakeProcess { FailStart = true };
         using var lifecycle = NewLifecycle(admin, process);
         await Assert.ThrowsAsync<RunnerProcessException>(() => lifecycle.RegisterAndStartAsync(2, TimeSpan.Zero, default));
         Assert.Contains(lifecycle.Journal, x => x.State == PortableRunnerState.Configured);
         Assert.Equal(PortableRunnerState.Degraded, lifecycle.State);
         Assert.DoesNotContain("SECRET", string.Join(' ', lifecycle.Journal));
+        Assert.False(lifecycle.HasOwnedProcess);
+        await lifecycle.UnregisterAsync(1, TimeSpan.Zero, default);
+        Assert.Equal(PortableRunnerState.Removed, lifecycle.State);
+        Assert.Equal(0, process.Owned.StopCount);
     }
 
     [Fact]
-    public async Task OnlinePollingSucceedsAndTimeoutStopsOwnedProcess()
+    public async Task OnlinePollingSucceedsAndTimeoutLeavesOwnedProcessRunning()
     {
-        var admin = new FakeAdmin { Lists = Pages([], [], [Runner(1, online: false)], [Runner(1, online: true)]) };
+        var admin = new FakeAdmin { Lists = Pages([], [Runner(1, false)], [Runner(1, false)], [Runner(1, true)]) };
         var process = new FakeProcess();
         using var lifecycle = NewLifecycle(admin, process);
         await lifecycle.RegisterAndStartAsync(3, TimeSpan.Zero, default);
         Assert.Equal(PortableRunnerState.Online, lifecycle.State);
         Assert.Equal(0, process.Owned.StopCount);
 
-        var timeoutAdmin = new FakeAdmin { Lists = Pages([], [], []) };
+        var timeoutAdmin = new FakeAdmin { Lists = Pages([], [Runner(1, false)], [Runner(1, false)],
+            [Runner(1, true, true)]) };
         var timeoutProcess = new FakeProcess();
         using var timed = NewLifecycle(timeoutAdmin, timeoutProcess);
         var error = await Assert.ThrowsAsync<PortableRunnerException>(() => timed.RegisterAndStartAsync(1, TimeSpan.Zero, default));
         Assert.Equal(PortableRunnerFailure.OnlineTimeout, error.Failure);
-        Assert.Equal(1, timeoutProcess.Owned.StopCount);
+        Assert.Equal(0, timeoutProcess.Owned.StopCount);
+        Assert.True(timed.HasOwnedProcess);
+        Assert.Single(timeoutAdmin.Lists); // A late assignment must not become a kill trigger.
         Assert.Equal(PortableRunnerState.Degraded, timed.State);
     }
 
     [Fact]
-    public async Task DrainWaitsWhileBusyThenStopsAndCancellationPreservesOwnedProcess()
+    public async Task DrainFailsClosedAcrossIdleAbsentBusyAndCancellation()
     {
-        var admin = new FakeAdmin { Lists = Pages([], [Runner(1, true)], [Runner(1, true, true)], [Runner(1, true, false)]) };
+        var admin = new FakeAdmin { Lists = Pages([], [Runner(1, false)], [Runner(1, true)],
+            [Runner(1, false)], [], [Runner(1, true, true)]) };
         var process = new FakeProcess();
         using var lifecycle = NewLifecycle(admin, process);
         await lifecycle.RegisterAndStartAsync(1, TimeSpan.Zero, default);
-        await lifecycle.DrainAsync(2, TimeSpan.Zero, default);
-        Assert.Equal(1, process.Owned.StopCount);
-        Assert.Equal(PortableRunnerState.Paused, lifecycle.State);
-
-        var cancelAdmin = new FakeAdmin { Lists = Pages([], [Runner(1, true)]) };
-        var cancelProcess = new FakeProcess();
-        using var cancelLifecycle = NewLifecycle(cancelAdmin, cancelProcess);
-        await cancelLifecycle.RegisterAndStartAsync(1, TimeSpan.Zero, default);
+        var remaining = admin.Lists.Count;
+        for (var i = 0; i < 3; i++)
+        {
+            var error = await Assert.ThrowsAsync<PortableRunnerException>(() => lifecycle.DrainAsync(1, TimeSpan.Zero, default));
+            Assert.Equal(PortableRunnerFailure.DrainUnavailable, error.Failure);
+            Assert.Equal(remaining, admin.Lists.Count);
+            Assert.Equal(0, process.Owned.StopCount);
+            Assert.True(lifecycle.HasOwnedProcess);
+            Assert.Equal(PortableRunnerState.Online, lifecycle.State);
+        }
         using var canceled = new CancellationTokenSource();
         canceled.Cancel();
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => cancelLifecycle.DrainAsync(2, TimeSpan.Zero, canceled.Token));
-        Assert.Equal(0, cancelProcess.Owned.StopCount);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => lifecycle.DrainAsync(2, TimeSpan.Zero, canceled.Token));
+        Assert.Equal(0, process.Owned.StopCount);
     }
 
     [Fact]
     public async Task StopNowTargetsOnlyOwnedProcessAndUnregisterCanRemainPending()
     {
-        var admin = new FakeAdmin { Lists = Pages([], [Runner(1, true)], [Runner(1, false)], [Runner(1, false)]) };
+        var admin = new FakeAdmin { Lists = Pages([], [Runner(1, false)], [Runner(1, true)],
+            [Runner(1, false)], [Runner(1, false)]) };
         var process = new FakeProcess();
         using var lifecycle = NewLifecycle(admin, process);
         await lifecycle.RegisterAndStartAsync(1, TimeSpan.Zero, default);
@@ -315,24 +327,29 @@ public sealed class PortableLifecycleTests
     }
 
     [Fact]
-    public async Task DrainTimeoutDoesNotKillBusyOwnedProcess()
+    public async Task UnregisterRefusesLiveProcessEvenIfNextStatusIsAbsentOrIdle()
     {
-        var admin = new FakeAdmin { Lists = Pages([], [Runner(1, true)], [Runner(1, true, true)]) };
+        var admin = new FakeAdmin { Lists = Pages([], [Runner(1, false)], [Runner(1, true)], [], [Runner(1, false)]) };
         var process = new FakeProcess();
         using var lifecycle = NewLifecycle(admin, process);
         await lifecycle.RegisterAndStartAsync(1, TimeSpan.Zero, default);
-        var error = await Assert.ThrowsAsync<PortableRunnerException>(() => lifecycle.DrainAsync(1, TimeSpan.Zero, default));
-        Assert.Equal(PortableRunnerFailure.DrainTimeout, error.Failure);
+        var remaining = admin.Lists.Count;
+        var error = await Assert.ThrowsAsync<PortableRunnerException>(() => lifecycle.UnregisterAsync(1, TimeSpan.Zero, default));
+        Assert.Equal(PortableRunnerFailure.ActiveProcess, error.Failure);
         Assert.Equal(0, process.Owned.StopCount);
+        Assert.Equal(0, admin.RemoveTokenRequests);
+        Assert.Equal(remaining, admin.Lists.Count);
     }
 
     [Fact]
     public async Task UnregisterSuccessVerifiesRemoteDisappearance()
     {
-        var admin = new FakeAdmin { Lists = Pages([], [Runner(1, true)], [Runner(1, false)], []) };
+        var admin = new FakeAdmin { Lists = Pages([], [Runner(1, false)], [Runner(1, true)],
+            [Runner(1, false)], []) };
         var process = new FakeProcess();
         using var lifecycle = NewLifecycle(admin, process);
         await lifecycle.RegisterAndStartAsync(1, TimeSpan.Zero, default);
+        await lifecycle.StopNowAsync(default);
         await lifecycle.UnregisterAsync(1, TimeSpan.Zero, default);
         Assert.Equal(PortableRunnerState.Removed, lifecycle.State);
         Assert.Equal(1, process.Owned.StopCount);
@@ -341,14 +358,103 @@ public sealed class PortableLifecycleTests
     [Fact]
     public async Task UnregisterRemoteUnavailablePreservesPendingEvidence()
     {
-        var admin = new FakeAdmin { Lists = Pages([], [Runner(1, true)], [Runner(1, false)]) };
+        var admin = new FakeAdmin { Lists = Pages([], [Runner(1, false)], [Runner(1, true)], [Runner(1, false)]) };
         var process = new FakeProcess();
         using var lifecycle = NewLifecycle(admin, process);
         await lifecycle.RegisterAndStartAsync(1, TimeSpan.Zero, default);
+        await lifecycle.StopNowAsync(default);
         await Assert.ThrowsAsync<InvalidOperationException>(() => lifecycle.UnregisterAsync(1, TimeSpan.Zero, default));
         Assert.Equal(PortableRunnerState.RemoteRemovalPending, lifecycle.State);
         Assert.Equal(1, process.Owned.StopCount);
         Assert.DoesNotContain("SECRET", string.Join(' ', lifecycle.Journal));
+    }
+
+    [Fact]
+    public async Task UnregisterRefusesUnknownOnlineProcessAfterOwnedExit()
+    {
+        var admin = new FakeAdmin { Lists = Pages([], [Runner(1, false)], [Runner(1, true)], [Runner(1, true)]) };
+        var process = new FakeProcess();
+        using var lifecycle = NewLifecycle(admin, process);
+        await lifecycle.RegisterAndStartAsync(1, TimeSpan.Zero, default);
+        process.Owned.ExitIndependently();
+        var error = await Assert.ThrowsAsync<PortableRunnerException>(() =>
+            lifecycle.UnregisterAsync(1, TimeSpan.Zero, default));
+        Assert.Equal(PortableRunnerFailure.IdentityUncertain, error.Failure);
+        Assert.Equal(0, process.Owned.StopCount);
+        Assert.Equal(0, admin.RemoveTokenRequests);
+        Assert.Equal(PortableRunnerState.RemoteRemovalPending, lifecycle.State);
+    }
+
+    [Fact]
+    public async Task CancelAfterStartNeverStopsOwnedProcessOrLosesRecoveryState()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var admin = new FakeAdmin { Lists = Pages([], [Runner(1, false)]) };
+        var process = new FakeProcess { OnStarted = cancellation.Cancel };
+        using var lifecycle = NewLifecycle(admin, process);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            lifecycle.RegisterAndStartAsync(2, TimeSpan.Zero, cancellation.Token));
+        Assert.True(lifecycle.HasOwnedProcess);
+        Assert.Equal(0, process.Owned.StopCount);
+        Assert.Equal(PortableRunnerState.Degraded, lifecycle.State);
+        Assert.Equal(1, lifecycle.RunnerId);
+        Assert.DoesNotContain("SECRET", string.Join(' ', lifecycle.Journal));
+    }
+
+    [Fact]
+    public async Task DisposingCoordinatorDoesNotStopAnActiveRunner()
+    {
+        var admin = new FakeAdmin { Lists = Pages([], [Runner(1, false)], [Runner(1, true)]) };
+        var process = new FakeProcess();
+        var lifecycle = NewLifecycle(admin, process);
+        await lifecycle.RegisterAndStartAsync(1, TimeSpan.Zero, default);
+        lifecycle.Dispose();
+        Assert.Equal(0, process.Owned.StopCount);
+        Assert.False(process.Owned.HasExited);
+    }
+
+    [Fact]
+    public async Task ResumeTimeoutDoesNotStopNewProcess()
+    {
+        var admin = new FakeAdmin { Lists = Pages([], [Runner(1, false)], [Runner(1, true)], [Runner(1, false)]) };
+        var process = new FakeProcess();
+        using var lifecycle = NewLifecycle(admin, process);
+        await lifecycle.RegisterAndStartAsync(1, TimeSpan.Zero, default);
+        await lifecycle.StopNowAsync(default);
+        var first = process.Owned;
+        await Assert.ThrowsAsync<PortableRunnerException>(() => lifecycle.ResumeAsync(1, TimeSpan.Zero, default));
+        Assert.Equal(1, first.StopCount);
+        Assert.Equal(0, process.Owned.StopCount);
+        Assert.True(lifecycle.HasOwnedProcess);
+        Assert.Equal(PortableRunnerState.Degraded, lifecycle.State);
+    }
+
+    [Fact]
+    public async Task ResumeCancellationDoesNotStopNewProcess()
+    {
+        var admin = new FakeAdmin { Lists = Pages([], [Runner(1, false)], [Runner(1, true)]) };
+        var process = new FakeProcess();
+        using var lifecycle = NewLifecycle(admin, process);
+        await lifecycle.RegisterAndStartAsync(1, TimeSpan.Zero, default);
+        await lifecycle.StopNowAsync(default);
+        using var cancellation = new CancellationTokenSource();
+        process.OnStarted = cancellation.Cancel;
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            lifecycle.ResumeAsync(2, TimeSpan.Zero, cancellation.Token));
+        Assert.Equal(0, process.Owned.StopCount);
+        Assert.True(lifecycle.HasOwnedProcess);
+        Assert.Equal(PortableRunnerState.Degraded, lifecycle.State);
+    }
+
+    [Fact]
+    public void RunEnvironmentContainsVerifiedNonSecretMetadataOnly()
+    {
+        var info = new ProcessStartInfo("unused") { UseShellExecute = false };
+        RunnerBatchBoundary.SetRunEnvironment(info, Cli.Capabilities.Version);
+        Assert.Equal("2.337.0", info.Environment["GRL_RUNNER_VERSION"]);
+        Assert.Equal("portable-user", info.Environment["GRL_IDENTITY_CLASS"]);
+        Assert.DoesNotContain("SECRET", info.Environment["GRL_RUNNER_VERSION"] + info.Environment["GRL_IDENTITY_CLASS"]);
+        Assert.Throws<RunnerProcessException>(() => RunnerBatchBoundary.SetRunEnvironment(info, "unknown"));
     }
 
     private static PortableRunnerLifecycle NewLifecycle(FakeAdmin admin, FakeProcess process) =>
@@ -424,7 +530,8 @@ public sealed class PortableLifecycleTests
     {
         public List<RunnerCommand> Commands { get; } = [];
         public List<string> Operations { get; } = [];
-        public FakeOwned Owned { get; } = new();
+        public FakeOwned Owned { get; private set; } = new();
+        public Action? OnStarted { get; set; }
         public bool FailConfigure { get; set; }
         public bool FailStart { get; set; }
         public int StartCount { get; private set; }
@@ -435,10 +542,13 @@ public sealed class PortableLifecycleTests
             if (FailConfigure) throw new RunnerProcessException(RunnerProcessFailure.CommandFailed, "Configuration failed.");
             return Task.CompletedTask;
         }
-        public Task<IOwnedRunnerProcess> StartAsync(RunnerCommand command, CancellationToken ct)
+        public Task<IOwnedRunnerProcess> StartAsync(RunnerCommand command, string verifiedVersion, CancellationToken ct)
         {
             StartCount++;
             if (FailStart) throw new RunnerProcessException(RunnerProcessFailure.StartupFailed, "Start failed.");
+            Assert.Equal(RunnerPin.ReviewedVersion, verifiedVersion);
+            Owned = new FakeOwned();
+            OnStarted?.Invoke();
             return Task.FromResult<IOwnedRunnerProcess>(Owned);
         }
     }
@@ -447,6 +557,7 @@ public sealed class PortableLifecycleTests
     {
         public bool HasExited { get; private set; }
         public int StopCount { get; private set; }
+        public void ExitIndependently() => HasExited = true;
         public Task StopAsync(CancellationToken ct)
         {
             ct.ThrowIfCancellationRequested();

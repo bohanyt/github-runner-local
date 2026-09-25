@@ -81,12 +81,12 @@ public static class LiveWizardPages
         WizardState.InstallingConfiguring => new(state, "Registering portable runner", "Checking name collision and starting the reviewed runner CLI."),
         WizardState.RunnerOffline => new(state, "Checking runner status", "Waiting for the exact runner to appear online."),
         WizardState.RunnerIdle => new(state, "Runner online", "The portable runner is online and idle."),
-        WizardState.RunnerBusy => new(state, "Runner busy", "A job is running. Drain waits for it to finish."),
-        WizardState.RunnerDraining => new(state, "Draining runner", "Waiting for the current job to finish before stopping the local process."),
-        WizardState.RunnerPaused => new(state, "Runner paused", "The local runner process is stopped."),
-        WizardState.RunnerDegraded => new(state, "Runner degraded", "Inspect the safe status and retry or disconnect."),
+        WizardState.RunnerBusy => new(state, "Runner busy", "Safe Pause is unavailable. Explicit Stop Now can cancel this or a newly assigned job."),
+        WizardState.RunnerDraining => new(state, "Runner state pending", "Safe automatic Drain is unavailable; the process was not stopped."),
+        WizardState.RunnerPaused => new(state, "Runner stopped explicitly", "The owned process was stopped with Stop Now. Remote registration may remain."),
+        WizardState.RunnerDegraded => new(state, "Runner degraded", "A process or registration may remain. Use exact-identity recovery when available."),
         WizardState.DisconnectPending or WizardState.DisconnectRemotePending => new(state, "Unregister pending",
-            "The local runner is stopped. Remote removal is pending or unverified."),
+            "Remote removal is pending or unverified. A process from an earlier app session may still be running."),
         WizardState.DisconnectDone => new(state, "Runner unregistered", "The exact runner is absent from the target repository."),
         _ => new(state, state.ToString(), "Review the current live state before continuing.")
     };

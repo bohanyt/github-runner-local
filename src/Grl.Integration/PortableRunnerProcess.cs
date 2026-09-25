@@ -20,12 +20,20 @@ public interface IOwnedRunnerProcess : IDisposable
 public interface IRunnerProcessAdapter
 {
     Task ExecuteAsync(RunnerCommand command, CancellationToken ct);
-    Task<IOwnedRunnerProcess> StartAsync(RunnerCommand command, CancellationToken ct);
+    Task<IOwnedRunnerProcess> StartAsync(RunnerCommand command, string verifiedVersion, CancellationToken ct);
 }
 
 public static class RunnerBatchBoundary
 {
     private static readonly Regex SafeArgument = new(@"\A[A-Za-z0-9._:/,-]{1,512}\z", RegexOptions.CultureInvariant);
+
+    public static void SetRunEnvironment(ProcessStartInfo start, string verifiedVersion)
+    {
+        if (verifiedVersion != RunnerPin.ReviewedVersion)
+            throw new RunnerProcessException(RunnerProcessFailure.UnsafeCommand, "A verified supported runner version is required.");
+        start.Environment["GRL_RUNNER_VERSION"] = verifiedVersion;
+        start.Environment["GRL_IDENTITY_CLASS"] = "portable-user";
+    }
 
     public static ProcessStartInfo Build(string verifiedRoot, RunnerCommand command, string commandInterpreter)
     {
@@ -131,13 +139,15 @@ public sealed class PortableRunnerProcess : IRunnerProcessAdapter
         }
     }
 
-    public Task<IOwnedRunnerProcess> StartAsync(RunnerCommand command, CancellationToken ct)
+    public Task<IOwnedRunnerProcess> StartAsync(RunnerCommand command, string verifiedVersion, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
         RefuseElevation();
         if (command.EntryPoint != "run.cmd" || command.Arguments.Count != 0)
             throw new RunnerProcessException(RunnerProcessFailure.UnsafeCommand, "Portable run entrypoint required.");
-        var process = Start(command);
+        var info = RunnerBatchBoundary.Build(root, command, cmd);
+        RunnerBatchBoundary.SetRunEnvironment(info, verifiedVersion);
+        var process = Start(info);
         return Task.FromResult<IOwnedRunnerProcess>(new OwnedRunnerProcess(process));
     }
 
@@ -186,9 +196,10 @@ public sealed class PortableRunnerProcess : IRunnerProcessAdapter
         }
     }
 
-    private Process Start(RunnerCommand command)
+    private Process Start(RunnerCommand command) => Start(RunnerBatchBoundary.Build(root, command, cmd));
+
+    private static Process Start(ProcessStartInfo info)
     {
-        var info = RunnerBatchBoundary.Build(root, command, cmd);
         var process = new Process { StartInfo = info };
         try
         {

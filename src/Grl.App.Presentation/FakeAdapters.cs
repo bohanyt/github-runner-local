@@ -63,6 +63,7 @@ public interface IRunnerControllerAdapter
 
 public interface IDisconnectAdapter
 {
+    bool HasPendingRecovery { get; }
     Task<WizardEvent> RemoveAsync();
 }
 
@@ -207,6 +208,7 @@ public sealed class FakeRunnerControllerAdapter(FakeScenario scenario) : IRunner
 
 public sealed class FakeDisconnectAdapter(FakeScenario scenario) : IDisconnectAdapter
 {
+    public bool HasPendingRecovery => false;
     public Task<WizardEvent> RemoveAsync() =>
         Task.FromResult(scenario == FakeScenario.DisconnectRemoteUnavailable
             ? WizardEvent.RemoteUnavailable : WizardEvent.RemoteRemoved);

@@ -65,6 +65,9 @@
                            Visibility="{Binding IsLive, Converter={StaticResource BoolToVisibility}}"
                            TextWrapping="Wrap" Margin="0,0,0,14"
                            AutomationProperties.Name="Owned local runner root" />
+                <TextBlock Text="{Binding RunnerPresenceText}" TextWrapping="Wrap" Margin="0,0,0,12"
+                           Visibility="{Binding IsLive, Converter={StaticResource BoolToVisibility}}"
+                           AutomationProperties.Name="{Binding RunnerPresenceText}" />
                 <ItemsControl ItemsSource="{Binding Actions}" AutomationProperties.Name="Available wizard actions">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
@@ -83,7 +86,7 @@
                         AutomationProperties.Name="Preview local file removal plan" />
                 <TextBlock Text="{Binding DeletionPlanText}" TextWrapping="Wrap" Margin="0,8,0,12"
                            AutomationProperties.Name="{Binding DeletionPlanText}" />
-                <Button Content="_Stop now (ends active job)" Command="{Binding StopNowCommand}"
+                <Button Content="_Stop Now (may cancel an active or newly assigned job)" Command="{Binding StopNowCommand}"
                         Visibility="{Binding IsLive, Converter={StaticResource BoolToVisibility}}"
                         HorizontalAlignment="Left" AutomationProperties.Name="Stop owned runner now" />
                 <Expander Header="Preview simulation controls" Margin="0,8,0,12"

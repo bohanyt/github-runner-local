@@ -71,20 +71,70 @@ public sealed class LivePresentationTests
     }
 
     [Fact]
-    public async Task LiveDrainResumeAndStopNowDoNotExposePreviewSimulation()
+    public async Task LivePauseIsUnavailableAndStopNowIsExplicit()
     {
-        var adapter = new SafeLiveFake();
+        var adapter = new SafeLiveFake { Owned = true };
         var session = NewLive(adapter, WizardState.RunnerIdle);
+        Assert.DoesNotContain(WizardEvent.Drain, session.EnabledUserCommands);
+        Assert.DoesNotContain(session.Actions, x => x.Label.Contains("Drain", StringComparison.OrdinalIgnoreCase));
         await session.ExecuteUserCommandAsync(WizardEvent.Drain);
-        Assert.Equal(WizardState.RunnerPaused, session.State);
-        Assert.Equal(1, adapter.DrainCount);
-        await session.ExecuteUserCommandAsync(WizardEvent.Resume);
         Assert.Equal(WizardState.RunnerIdle, session.State);
-        Assert.Equal(1, adapter.ResumeCount);
+        Assert.Equal(0, adapter.DrainCount);
+        Assert.Contains("may cancel", session.RunnerPresenceText);
         await session.StopNowAsync();
         Assert.Equal(WizardState.RunnerPaused, session.State);
         Assert.Equal(1, adapter.StopCount);
+        Assert.Contains("may have been cancelled", session.StatusText);
         Assert.Empty(session.SimulationActions);
+    }
+
+    [Theory]
+    [InlineData(WizardState.InstallingConfiguring, "INSTALL_CONFIGURE_FAILED")]
+    [InlineData(WizardState.InstallingDownloading, "RECOVERY_REQUIRED")]
+    public async Task FailedConfigureAndReopenKeepExactRecoveryVisible(WizardState failureAt, string code)
+    {
+        var adapter = new SafeLiveFake { PendingRecovery = true, InstallErrorState = failureAt, InstallErrorCode = code,
+            RemoveEvent = WizardEvent.RemoteUnavailable };
+        var session = NewLive(adapter);
+        session.Acknowledged = true;
+        await session.ContinueFromWelcomeAsync();
+        await session.ExecuteUserCommandAsync(WizardEvent.Continue);
+        session.AccountConfirmed = true;
+        await session.ExecuteUserCommandAsync(WizardEvent.Continue);
+        session.TargetConfirmed = true;
+        await session.ExecuteUserCommandAsync(WizardEvent.Continue);
+        await session.ExecuteUserCommandAsync(WizardEvent.Continue);
+        Assert.Equal(failureAt, session.State);
+        Assert.Equal(code, session.ActiveError?.Code);
+        Assert.True(session.CanRecover);
+        Assert.Contains(session.Actions, x => x.AutomationName == "Recover exact runner registration");
+        await session.RecoverAsync();
+        Assert.Equal(WizardState.DisconnectRemotePending, session.State);
+        Assert.Equal(1, adapter.RemoveCount);
+        Assert.Contains("pending", session.StatusText);
+        Assert.DoesNotContain("SECRET", session.StatusText + string.Join(' ', session.Journal));
+    }
+
+    [Fact]
+    public async Task ActiveProcessAfterConfigureFailureRequiresSeparateStopNow()
+    {
+        var adapter = new SafeLiveFake { PendingRecovery = true, Owned = true,
+            InstallErrorState = WizardState.InstallingConfiguring, InstallErrorCode = "INSTALL_CONFIGURE_FAILED" };
+        var session = NewLive(adapter);
+        session.Acknowledged = true;
+        await session.ContinueFromWelcomeAsync();
+        await session.ExecuteUserCommandAsync(WizardEvent.Continue);
+        session.AccountConfirmed = true;
+        await session.ExecuteUserCommandAsync(WizardEvent.Continue);
+        session.TargetConfirmed = true;
+        await session.ExecuteUserCommandAsync(WizardEvent.Continue);
+        await session.ExecuteUserCommandAsync(WizardEvent.Continue);
+        Assert.False(session.CanRecover);
+        Assert.True(session.StopNowCommand.CanExecute(null));
+        await session.StopNowAsync();
+        Assert.Equal(1, adapter.StopCount);
+        Assert.True(session.CanRecover);
+        Assert.Equal(0, adapter.RemoveCount);
     }
 
     [Fact]
@@ -139,7 +189,13 @@ public sealed class LivePresentationTests
         public int DrainCount { get; private set; }
         public int ResumeCount { get; private set; }
         public int StopCount { get; private set; }
-        public bool HasOwnedProcess => false;
+        public bool Owned { get; set; }
+        public bool PendingRecovery { get; set; }
+        public bool HasOwnedProcess => Owned;
+        public bool HasPendingRecovery => PendingRecovery;
+        public WizardState? InstallErrorState { get; set; }
+        public string InstallErrorCode { get; set; } = "INSTALL_CONFIGURE_FAILED";
+        public WizardEvent RemoveEvent { get; set; } = WizardEvent.RemoteRemoved;
         public Task<WizardEvent> CheckAsync() => Task.FromResult(WizardEvent.Passed);
         public Task<DeviceCodeDisplay> IssueCodeAsync() => Task.FromResult(
             new DeviceCodeDisplay("ABCD", new Uri("https://github.com/login/device")));
@@ -160,6 +216,7 @@ public sealed class LivePresentationTests
         public Task<AdapterResult> AdvanceAsync(WizardState state)
         {
             InstallStates.Add(state);
+            if (state == InstallErrorState) return Task.FromResult(new AdapterResult(null, InstallErrorCode));
             return Task.FromResult(new AdapterResult(state switch
             {
                 WizardState.InstallingDownloading => WizardEvent.Downloaded,
@@ -172,8 +229,8 @@ public sealed class LivePresentationTests
         public Task<WizardEvent> StartAsync() { StartCount++; return Task.FromResult(WizardEvent.Online); }
         public Task DrainAsync() { DrainCount++; return Task.CompletedTask; }
         public Task ResumeAsync() { ResumeCount++; return Task.CompletedTask; }
-        public Task StopNowAsync() { StopCount++; return Task.CompletedTask; }
+        public Task StopNowAsync() { StopCount++; Owned = false; return Task.CompletedTask; }
         public Task<AdapterResult> RefreshAsync(WizardState state) => Task.FromResult(new AdapterResult(RefreshEvent));
-        public Task<WizardEvent> RemoveAsync() { RemoveCount++; return Task.FromResult(WizardEvent.RemoteRemoved); }
+        public Task<WizardEvent> RemoveAsync() { RemoveCount++; return Task.FromResult(RemoveEvent); }
     }
 }

@@ -66,6 +66,8 @@ internal sealed class LiveWizardAdapters : IPreflightAdapter, IDeviceSignInAdapt
     private PortableRunnerProcess? process;
     private IRunnerCli? cli;
     private PortableRunnerLifecycle? lifecycle;
+    private PortableRecoveryStore? recoveryStore;
+    private PortableRecoveryEvidence? reopened;
 
     public LiveWizardAdapters(LiveRuntimeOptions options)
     {
@@ -163,9 +165,19 @@ internal sealed class LiveWizardAdapters : IPreflightAdapter, IDeviceSignInAdapt
             {
                 case WizardState.InstallingDownloading:
                     if (selected is null || access is null) return new AdapterResult(null, "INSTALL_DOWNLOAD_FAILED");
+                    var finalRoot = Path.Combine(options.OwnedRoot, "runner");
+                    if (ExistingFinalRoot(finalRoot))
+                    {
+                        recoveryStore ??= PortableRecoveryStore.Open(finalRoot, selected.FullName, options.RunnerName);
+                        reopened = recoveryStore.Read();
+                        return new AdapterResult(null, reopened is null ? "RECOVERY_STATE_UNAVAILABLE" :
+                            reopened.State == PortableRunnerState.Removed ? "RECOVERY_COMPLETED" : "RECOVERY_REQUIRED");
+                    }
                     var pin = RunnerPin.LoadReviewed(Path.Combine(AppContext.BaseDirectory, "runner-pins.json"));
                     installed = await new RunnerPackageInstaller().DownloadAndInstallAsync(
                         downloadHttp, pin, options.OwnedRoot, "runner", CancellationToken.None);
+                    recoveryStore = PortableRecoveryStore.Open(installed.FinalRoot, selected.FullName, options.RunnerName);
+                    recoveryStore.Write(null, PortableRunnerState.Ready);
                     return new AdapterResult(WizardEvent.Downloaded);
                 case WizardState.InstallingVerifying:
                     return installed is not null && installed.Sha256 == RunnerPin.ReviewedSha256
@@ -179,7 +191,8 @@ internal sealed class LiveWizardAdapters : IPreflightAdapter, IDeviceSignInAdapt
                     if (selected is null || access is null || process is null || cli is null)
                         return new AdapterResult(null, "INSTALL_CONFIGURE_FAILED");
                     var admin = new GitHubRunnerAdministration(apiHttp, access, selected);
-                    lifecycle = new PortableRunnerLifecycle(admin, cli, process, options.RunnerName, "grl-exec");
+                    lifecycle = new PortableRunnerLifecycle(admin, cli, process, options.RunnerName, "grl-exec",
+                        recovery: recoveryStore);
                     await lifecycle.RegisterAndStartAsync(20, TimeSpan.FromSeconds(3), CancellationToken.None);
                     return new AdapterResult(WizardEvent.Configured);
                 default:
@@ -190,7 +203,8 @@ internal sealed class LiveWizardAdapters : IPreflightAdapter, IDeviceSignInAdapt
         {
             return new AdapterResult(null, state switch
             {
-                WizardState.InstallingDownloading => "INSTALL_DOWNLOAD_FAILED",
+                WizardState.InstallingDownloading => ExistingFinalRoot(Path.Combine(options.OwnedRoot, "runner"))
+                    ? "RECOVERY_STATE_UNAVAILABLE" : "INSTALL_DOWNLOAD_FAILED",
                 WizardState.InstallingVerifying => "INSTALL_VERIFY_FAILED",
                 WizardState.InstallingExtracting => "INSTALL_EXTRACT_FAILED",
                 _ => "INSTALL_CONFIGURE_FAILED"
@@ -211,6 +225,9 @@ internal sealed class LiveWizardAdapters : IPreflightAdapter, IDeviceSignInAdapt
     }
 
     public bool HasOwnedProcess => lifecycle?.HasOwnedProcess == true;
+    public bool HasPendingRecovery => recoveryStore is not null &&
+        (lifecycle is { State: not PortableRunnerState.Removed } ||
+            reopened is { State: not PortableRunnerState.Removed });
 
     public async Task DrainAsync()
     {
@@ -251,14 +268,42 @@ internal sealed class LiveWizardAdapters : IPreflightAdapter, IDeviceSignInAdapt
 
     public async Task<WizardEvent> RemoveAsync()
     {
-        if (lifecycle is null) return WizardEvent.RemoteUnavailable;
+        if (HasOwnedProcess) return WizardEvent.RemoteUnavailable;
+        if (selected is null || access is null || recoveryStore is null) return WizardEvent.RemoteUnavailable;
         try
         {
-            await lifecycle.UnregisterAsync(120, TimeSpan.FromSeconds(5), CancellationToken.None);
-            return lifecycle.State == PortableRunnerState.Removed
-                ? WizardEvent.RemoteRemoved : WizardEvent.RemoteUnavailable;
+            if (lifecycle is not null)
+            {
+                await lifecycle.UnregisterAsync(120, TimeSpan.FromSeconds(5), CancellationToken.None);
+                return lifecycle.State == PortableRunnerState.Removed
+                    ? WizardEvent.RemoteRemoved : WizardEvent.RemoteUnavailable;
+            }
+            // Reopen is recovery-only: no process is adopted and no local CLI is executed.
+            if (reopened is not { CanAttemptExactRemoteRemoval: true, RunnerId: long id })
+                return WizardEvent.RemoteUnavailable;
+            var admin = new GitHubRunnerAdministration(apiHttp, access, selected);
+            await admin.DeleteStaleAsync(id, options.RunnerName, CancellationToken.None);
+            var remaining = await admin.ListAsync(CancellationToken.None);
+            if (remaining.Any(x => x.Id == id || x.Name.Equals(options.RunnerName, StringComparison.OrdinalIgnoreCase)))
+            {
+                recoveryStore.Write(id, PortableRunnerState.RemoteRemovalPending);
+                return WizardEvent.RemoteUnavailable;
+            }
+            recoveryStore.Write(id, PortableRunnerState.Removed);
+            reopened = reopened with { State = PortableRunnerState.Removed };
+            return WizardEvent.RemoteRemoved;
         }
-        catch { return WizardEvent.RemoteUnavailable; }
+        catch
+        {
+            try
+            {
+                if (lifecycle is null)
+                    recoveryStore.Write(reopened?.RunnerId, PortableRunnerState.RemoteRemovalPending,
+                        reopened?.MayHaveUnownedProcess ?? true);
+            }
+            catch { /* preserve existing evidence when storage is unavailable */ }
+            return WizardEvent.RemoteUnavailable;
+        }
     }
 
     private static bool SafeRoot(string root)
@@ -277,12 +322,21 @@ internal sealed class LiveWizardAdapters : IPreflightAdapter, IDeviceSignInAdapt
         { return false; }
     }
 
+    private static bool ExistingFinalRoot(string path)
+    {
+        try { return Path.Exists(path) || new FileInfo(path).LinkTarget is not null ||
+            new DirectoryInfo(path).LinkTarget is not null; }
+        catch (IOException) { return true; }
+        catch (UnauthorizedAccessException) { return true; }
+    }
+
     public void Dispose()
     {
         CancelSignIn();
         signInCancellation?.Dispose();
         access?.Dispose();
         lifecycle?.Dispose();
+        recoveryStore?.Dispose();
         apiHttp.Dispose();
         downloadHttp.Dispose();
     }
