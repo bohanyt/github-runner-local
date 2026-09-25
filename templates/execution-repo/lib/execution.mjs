@@ -7,36 +7,83 @@ const MAX_OUTPUT_BYTES = 64 * 1024;
 const MAX_TEST_FILE_BYTES = 1024 * 1024;
 const MAX_RESULT_BYTES = 32 * 1024;
 
+function xmlCounter(attrs, name, { required = false, fallback = null } = {}) {
+  const mentioned = new RegExp(`\\b${name}\\s*=`).test(attrs);
+  const match = new RegExp(`\\b${name}="(\\d+)"`).exec(attrs);
+  if (!match) {
+    if (required || mentioned) reject('INVALID_TEST_COUNTER');
+    return fallback;
+  }
+  const value = Number(match[1]);
+  if (!Number.isSafeInteger(value) || value < 0) reject('INVALID_TEST_COUNTER');
+  return value;
+}
+
+function junitCounts(attrs) {
+  const total = xmlCounter(attrs, 'tests', { required: true });
+  const failed = xmlCounter(attrs, 'failures', { fallback: 0 });
+  const errored = xmlCounter(attrs, 'errors', { fallback: 0 });
+  const skipped = xmlCounter(attrs, 'skipped', { fallback: 0 });
+  if (failed + errored + skipped > total) reject('INVALID_JUNIT');
+  return { passed: total - failed - errored - skipped, failed, skipped, errored };
+}
+
 export function parseJUnit(xml) {
-  const suite = /<testsuite\b([^>]*)>/.exec(xml);
-  if (!suite) reject('INVALID_JUNIT');
-  const attr = (name, fallback = null) => {
-    const match = new RegExp(`\\b${name}="(\\d+)"`).exec(suite[1]);
-    return match ? Number(match[1]) : fallback;
-  };
-  const total = attr('tests');
-  const failed = attr('failures', 0);
-  const errored = attr('errors', 0);
-  const skipped = attr('skipped', 0);
-  if (![total, failed, errored, skipped].every(Number.isSafeInteger) ||
-      total < 0 || failed < 0 || errored < 0 || skipped < 0 ||
-      failed + errored + skipped > total) reject('INVALID_JUNIT');
-  return { passed: total - failed - errored - skipped, failed, skipped, errored, source: 'junit' };
+  const suites = [...xml.matchAll(/<testsuite\b([^>]*)>/g)].map(match => junitCounts(match[1]));
+  if (!suites.length) reject('INVALID_JUNIT');
+  const aggregate = suites.reduce((sum, value) => ({
+    passed: sum.passed + value.passed,
+    failed: sum.failed + value.failed,
+    skipped: sum.skipped + value.skipped,
+    errored: sum.errored + value.errored
+  }), { passed: 0, failed: 0, skipped: 0, errored: 0 });
+
+  const root = /<testsuites\b([^>]*)>/.exec(xml);
+  if (root && /\b(?:tests|failures|errors|skipped)\s*=/.test(root[1])) {
+    const declared = junitCounts(root[1]);
+    if (declared.passed !== aggregate.passed ||
+        declared.failed !== aggregate.failed ||
+        declared.skipped !== aggregate.skipped ||
+        declared.errored !== aggregate.errored) reject('INVALID_JUNIT');
+  }
+  return { ...aggregate, source: 'junit' };
 }
 
 export function parseTrx(xml) {
   const counters = /<Counters\b([^>]*)\/?\s*>/.exec(xml);
   if (!counters) reject('INVALID_TRX');
-  const attr = name => {
-    const match = new RegExp(`\\b${name}="(\\d+)"`).exec(counters[1]);
-    return match ? Number(match[1]) : null;
-  };
-  const passed = attr('passed');
-  const failed = attr('failed');
-  const errored = attr('error');
-  const skipped = attr('notExecuted') ?? 0;
-  if (![passed, failed, errored, skipped].every(Number.isSafeInteger))
-    reject('INVALID_TRX');
+  const allowed = new Set([
+    'total', 'executed', 'passed', 'failed', 'error', 'timeout', 'aborted',
+    'inconclusive', 'passedButRunAborted', 'notRunnable', 'notExecuted',
+    'disconnected', 'warning', 'completed', 'inProgress', 'pending'
+  ]);
+  const values = {};
+  const seen = new Set();
+  for (const match of counters[1].matchAll(/\b([A-Za-z][A-Za-z0-9.-]*)="([^"]*)"/g)) {
+    const [, name, raw] = match;
+    if (!allowed.has(name) || seen.has(name) || !/^\d+$/.test(raw)) reject('INVALID_TRX');
+    const value = Number(raw);
+    if (!Number.isSafeInteger(value) || value < 0) reject('INVALID_TRX');
+    seen.add(name);
+    values[name] = value;
+  }
+  for (const name of counters[1].matchAll(/\b([A-Za-z][A-Za-z0-9.-]*)\s*=/g))
+    if (!seen.has(name[1])) reject('INVALID_TRX');
+
+  if (!Object.hasOwn(values, 'total')) reject('INVALID_TRX');
+  const value = name => values[name] ?? 0;
+  for (const name of ['timeout', 'aborted', 'inconclusive', 'passedButRunAborted',
+    'notRunnable', 'disconnected', 'warning', 'inProgress', 'pending'])
+    if (value(name) !== 0) reject('INVALID_TRX');
+
+  const passed = value('passed');
+  const failed = value('failed');
+  const errored = value('error');
+  const skipped = value('notExecuted');
+  const executed = passed + failed + errored;
+  if (executed + skipped !== value('total')) reject('INVALID_TRX');
+  if (Object.hasOwn(values, 'executed') && values.executed !== executed) reject('INVALID_TRX');
+  if (Object.hasOwn(values, 'completed') && values.completed !== executed) reject('INVALID_TRX');
   return { passed, failed, skipped, errored, source: 'trx' };
 }
 
