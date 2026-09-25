@@ -20,6 +20,12 @@ public sealed class FakeClock : IClock
 }
 
 public sealed record AdapterResult(WizardEvent? Event, string? ErrorCode = null, string? DisplayData = null);
+
+public sealed class AdapterOperationException(string errorCode) : Exception(errorCode)
+{
+    public string ErrorCode { get; } = errorCode;
+}
+
 public sealed record DeviceCodeDisplay(string UserCode, Uri VerificationUri);
 public sealed record TargetSelection(string RepositoryName, WizardEvent Event);
 
