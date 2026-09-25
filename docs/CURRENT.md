@@ -1,92 +1,102 @@
 # CURRENT — github-runner-local
 
-Updated: 2026-09-25. Phase: **C_CORRECTION_REVIEW_READY + E_PASS_MERGE_READY**.
+Updated: 2026-09-25. Phase: **C_MERGED + E_MERGED + LIVE_GATES_PENDING**.
 
 ## Authority
 
 - Canonical branch: `main`.
 - Control Tower: Issue #1.
-- Current handoff: `docs/control-tower/handoffs/GRL-20260925-C-CORRECTION-REVIEW-READY-E-PASS-V22.md`.
-- Required sentinel: `END_OF_GRL_HANDOFF key=GRL-20260925-C-CORRECTION-REVIEW-READY-E-PASS-V22 sections=8`.
+- Current handoff: `docs/control-tower/handoffs/GRL-20260925-C-E-MERGED-LIVE-GATES-PENDING-V24.md`.
+- Required sentinel: `END_OF_GRL_HANDOFF key=GRL-20260925-C-E-MERGED-LIVE-GATES-PENDING-V24 sections=7`.
 
 ## Checkpoint C
 
-Issue #10 / SAME DRAFT PR #12.
+Issue #10 / former PR #12.
 
-Original reviewed head:
-`67dd220771bf67f65348e622998e005bf30b26bc`.
+Independent passing head:
+`c062957407acf8f7d70c46767345e85c737f39f4`.
 
-Independent review:
-`5825901999` → `NEEDS_C_CORRECTION`.
+Independent correction rereview:
+- result `5826166918`
+- release `5826169745`
+- disposition `PASS_C_CORRECTION_EXACT_HEAD`
+- findings = 0
+- R-C-1 / R-C-2 / R-C-3 CLOSED
 
-Findings:
-- R-C-1 OAuth JSON negotiation
-- R-C-2 RunnerConfiguration token display leak
-- R-C-3 superscript Win32 device aliases
+Merged with normal merge commit and expected-head guard.
 
-Correction:
-- claim `5825976706`
-- handoff `5826033449`
-- release `5826036772`
-- exact corrected head `c062957407acf8f7d70c46767345e85c737f39f4`
-- exact correction delta = six authorized source/test files
-- full PR remains 13 original allowlisted paths
+PR #12 merge commit:
+`451d3ab889f9f63f45ebf90ba54ddece7b60e6eb`.
 
-Correction proof:
+## Checkpoint E
+
+Issue #11 / former PR #13.
+
+Independent passing head:
+`e2fb5a3152998990ea12e92be4aef921d1d19387`.
+
+Independent rereview:
+- result `5825645126`
+- release `5825647808`
+- disposition `PASS_E_RE3_CORRECTION_EXACT_HEAD`
+- findings = 0
+- R-E-1 / R-E-2 / R-E-3 CLOSED
+
+Merged with normal merge commit and expected-head guard.
+
+PR #13 merge commit:
+`a296f3f9dfa362f6a53d20ff81a46eef7a519819`.
+
+## Current main
+
+Post-merge source main before this continuity update:
+`a296f3f9dfa362f6a53d20ff81a46eef7a519819`.
+
+Both reviewed source checkpoints are now integrated into main.
+
+## Evidence
+
+C:
 - build 0 warnings / 0 errors
 - Core 192/192
 - Presentation 45/45
 - Integration 68/68
-- 0 failed / 0 skipped
-- targeted correction campaign 23/23
-- Windows read-only runner probe PASS
-- runner v2.337.0 exact SHA match
-- 12 required CLI capabilities present
-- no registration/start/token/service
+- targeted 23/23
+- read-only runner probe PASS
+- runner v2.337.0 exact pin/hash verified
 
-Independent correction rereview packet:
-Issue #10 `5826108522`.
+E:
+- 108 passed / 0 failed / 0 skipped
+- real linter PASS
+- schema mirrors PASS
+- PASS/FAIL fixtures correct
+- E-B1 zero-process BLOCKED
+- reviewed Stage-2 guard mutations reject
 
-No C merge before independent PASS.
+Evidence remains source/local proof. No live production acceptance has occurred.
 
-## Checkpoint E
+## Live gates still OPEN
 
-Issue #11 / DRAFT PR #13.
+Do NOT silently cross these gates:
 
-Exact passing head:
-`e2fb5a3152998990ea12e92be4aef921d1d19387`.
+- D09 / OD-1: private execution repository creation/use
+- D10 / OD-2: GitHub App creation/visibility/live login
+- D21: Stage-2 credentials / multi-repo authority
+- D12: service identity/helper
+- D15: signing/license/release policy
 
-Independent exact-head rereview:
-`5825645126` → `PASS_E_RE3_CORRECTION_EXACT_HEAD`, findings=0.
-
-R-E-1 / R-E-2 / R-E-3 are all CLOSED.
-
-E remains open/draft/unmerged and merge-ready pending a separate exact-head owner/CT merge action.
-
-## Merge boundaries
-
-No merge under reviewer roles.
-
-Before any merge:
-- fresh-check exact reviewed head;
-- fresh-check mergeability and claims;
-- use SHA guard;
-- no bypass/force;
-- no activation or hosted Actions as part of merge.
-
-## Activation boundaries
-
-Still forbidden without separate owner authorization:
-- private execution repo
-- live template activation
-- hosted Actions dispatch/rerun
+Also not yet authorized:
 - runner registration/start
-- Stage-2 credentials/implementation
-- GitHub App creation/live login
-- D/G1/service/UAC/release
+- live template activation
+- GitHub Actions dispatch/rerun
+- D / G1 live acceptance
+- service/UAC/release work
 
 ## Next
 
-1. One DIFFERENT independent reviewer rereviews C exact corrected head using packet `5826108522`.
-2. E may proceed separately to an exact-head merge action when owner/CT authorizes it.
-3. After C PASS, C gets its own separate merge gate.
+Primary next decision is owner authorization for the live path:
+1. resolve OD-2 GitHub App/live-login choice;
+2. resolve OD-1 private execution repo creation/use;
+3. then dispatch the bounded live D/G1 path while preserving the no-hosted-Actions constraint.
+
+No further source merge is pending for C or E.
