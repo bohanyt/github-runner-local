@@ -1,6 +1,6 @@
 # CURRENT — github-runner-local
 
-Updated: 2026-09-25. Phase: **C_IMPLEMENTED / AWAITING_INDEPENDENT_EXACT_HEAD_REVIEW + E_RACE_RECONCILIATION_READY**.
+Updated: 2026-09-25. Phase: **C_REVIEW_READY + E_REVIEW_READY**.
 
 ## Authority
 
@@ -8,104 +8,94 @@ Updated: 2026-09-25. Phase: **C_IMPLEMENTED / AWAITING_INDEPENDENT_EXACT_HEAD_RE
 - Control Tower: Issue #1.
 - Owner authorization for C source: Issue #1 comment `5811504614`.
 - Owner authorization for E source/template: Issue #1 comment `5811700793`.
-- Owner cloud→local transfer: Issue #1 comment `5813834606`.
 - Opus plan: Issue #2 comment `5807784901`.
 - CT plan review: Issue #2 comment `5807941253`.
-- Current handoff: `docs/control-tower/handoffs/GRL-20260925-C-REVIEW-READY-E-RACE-RECONCILIATION-V15.md`.
-- Required sentinel: `END_OF_GRL_HANDOFF key=GRL-20260925-C-REVIEW-READY-E-RACE-RECONCILIATION-V15 sections=9`.
+- Current handoff: `docs/control-tower/handoffs/GRL-20260925-C-E-BOTH-REVIEW-READY-V16.md`.
+- Required sentinel: `END_OF_GRL_HANDOFF key=GRL-20260925-C-E-BOTH-REVIEW-READY-V16 sections=9`.
 
-## Checkpoint C
+## Checkpoint C review candidate
 
-Issue #10 / GRL-009 remains independently review-ready.
+Issue #10 / GRL-009.
 
-DRAFT PR #12 exact head:
-`67dd220771bf67f65348e622998e005bf30b26bc`.
+DRAFT PR #12:
+- branch `feat/grl-c-device-runner-package`
+- base `cd6f6abd13de9af2122d1c61db774b2dc54f7da0`
+- exact head `67dd220771bf67f65348e622998e005bf30b26bc`
+- open / draft / unmerged / mergeable
+- 13 changed paths, all within C allowlist
+- implementation handoff `5813138169`
+- worker release `5813145195`
 
-No C merge before independent PASS.
+C worker evidence:
+- Core 192/192
+- Presentation 45/45
+- Integration 45/45
+- 0 skipped
+- Windows RunnerContractProbe PASS
+- official runner v2.337.0 exact SHA matched
+- Listener 2.337.0
+- all 12 required CLI capabilities present
 
-## Checkpoint E race
+C requires one independent exact-head review before merge.
+
+## Checkpoint E review candidate
 
 Issue #11 / GRL-010.
 
-Cancelled cloud claim:
-`5812970520`.
+DRAFT PR #13:
+- branch `feat/grl-e-execution-template`
+- base `8c4f5a32e1255a723775bb62ee07c4fe91772b90`
+- exact head `b23d37c4f0367d5311502d2cf80e31453a884d1d`
+- open / draft / unmerged / mergeable
+- 33 changed paths, all under `templates/execution-repo/**`
+- implementation handoff `5824305934`
+- worker release `5824311312`
 
-Owner transfer:
-`5813834606`.
+E reconciliation provenance:
+- stale cloud head `e13f868be0c42f0327c530a03e2e4ac884e9da75`
+- original local head `dbba8b3e25d38fc6a03d8981bc6bcbd3a52c940c`
+- selected integrated source head `724b580de2d2795ee1a0f35695cfe73896894942`
+- published reconciliation merge `b23d37c4...`
+- remote stale lineage preserved as first parent
+- selected local lineage preserved as second parent
+- published tree exactly matches selected integrated source tree
+- branch advanced by normal fast-forward, no force push
 
-Local takeover claim:
-`5813930109`, released blocked by `5814361882`.
+E final proof:
+- Node v24.14.1
+- 98 passed / 0 failed / 0 skipped
+- linter PASS
+- schema mirrors PASS
+- PASS fixture PASS
+- FAIL fixture PASS
+- E-B1 exact-SHA refusal PASS with zero profile processes
+- `git diff --check` PASS
+- full-SHA first-party action pins source-verified
 
-Blocked handoff:
-Issue #11 `5814358849`.
+E requires one independent exact-head review before merge.
 
-Unexpected remote E head:
-`e13f868be0c42f0327c530a03e2e4ac884e9da75`.
+## Parallel review rule
 
-That stale cloud commit:
-- appeared after claim revocation;
-- changes 31 paths, all under `templates/execution-repo/**`;
-- has no PR or implementation handoff;
-- is not automatically accepted or discarded.
+C and E reviews are independent and may run concurrently.
 
-Unpublished local candidate:
-`dbba8b3e25d38fc6a03d8981bc6bcbd3a52c940c`.
+Each reviewer:
+- claims only its own exact-head review;
+- writes only its own review comment + release;
+- does not merge;
+- does not alter the other candidate.
 
-Local reported proof:
-- Node v24.14.1;
-- 87 passed / 0 skipped;
-- linter PASS;
-- schema mirrors PASS;
-- PASS/FAIL fixtures PASS;
-- E-B1 refusal proof PASS with zero profile processes;
-- 33 template paths.
-
-## E reconciliation authority
-
-CT packet:
-Issue #11 `5823097901`.
-
-Decision D28 requires evidence-driven no-force reconciliation.
-
-One local Codex reconciliation worker must:
-- preserve both commits;
-- run the full proof campaign independently on BOTH exact candidates;
-- compare complete source against Issue #11 + `5811742857` + `5812014790`;
-- select or integrate the strongest compliant tree;
-- never force-push.
-
-If local/integrated tree is selected, publication uses a reconciliation merge:
-- first parent = current remote E head `e13f868...`;
-- second parent = selected local commit;
-- tree = exact selected local commit tree;
-- push is fast-forward on the canonical E branch.
-
-Absolute E source scope remains:
-`templates/execution-repo/**` ONLY.
-
-## E publication gate
-
-No E PR/handoff exists yet.
-
-Final E candidate must have:
-- full Node tests;
-- linter;
-- schema mirror;
-- PASS/FAIL fixtures;
-- E-B1 refusal proof;
-- `git diff --check`;
-- exact template-only path proof.
-
-After publication, a different independent reviewer reviews E.
+If either PR head moves, that review target is stale.
 
 ## Activation boundaries
 
-No private execution repo.
-No root workflow activation.
-No Actions dispatch.
-No runner activation.
-No Stage-2 credentials.
-No D/G1/service/release work.
+Still forbidden:
+- GitHub App creation/live login unless separately authorized;
+- private execution repo creation/use;
+- live template activation;
+- Actions dispatch;
+- runner registration/start;
+- Stage-2 credentials;
+- D/G1/service/release work.
 
 ## Open gates
 
@@ -117,7 +107,5 @@ D15 license/signing: OPEN.
 
 ## Next
 
-One local Codex worker claims the E reconciliation task, compares `e13f868...` and `dbba8b3...`, publishes the selected reconciled E candidate without force, creates one DRAFT PR + 9-section handoff, releases, and stops.
-
-C review may proceed independently.
+Run one independent exact-head review for C PR #12 and one independent exact-head review for E PR #13. They may run in parallel. PASS for each is required before its merge decision.
 
