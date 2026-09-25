@@ -74,42 +74,20 @@ public sealed class PortableRunnerLifecycle : IDisposable
         var existing = await admin.ListAsync(ct);
         if (existing.Any(x => x.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
             throw new PortableRunnerException(PortableRunnerFailure.NameCollision, "The runner name is already registered.");
-        Record(PortableRunnerState.Configuring, "No matching remote runner; configuration started.");
+        Record(PortableRunnerState.Configuring, "No matching remote runner; configuration is pending.");
         try
         {
-            Exception? configureError = null;
             using (var token = await admin.CreateRegistrationTokenAsync(ct))
             {
                 using var command = cli.BuildConfigure(new RunnerConfiguration(
                     new Uri($"https://github.com/{admin.Repository.FullName}"), token.Value,
                     name, label, "_work"));
                 registrationMayExist = true;
-                try
-                {
-                    await process.ExecuteAsync(command, ct);
-                }
-                catch (OperationCanceledException) when (ct.IsCancellationRequested)
-                {
-                    throw;
-                }
-                catch (Exception error)
-                {
-                    configureError = error;
-                }
+                await process.ExecuteAsync(command, ct);
             }
 
-            PortableRunnerException? identityError = null;
-            try
-            {
-                await ResolveRunnerIdAsync(maxPolls, pollInterval, requireOfflineIdle: true, ct);
-            }
-            catch (PortableRunnerException error)
-            {
-                identityError = error;
-            }
-
-            if (configureError is not null) throw configureError;
-            if (identityError is not null) throw identityError;
+            // A name match after a failed or uncertain configure cannot establish provenance.
+            await ResolveRunnerIdAsync(maxPolls, pollInterval, requireOfflineIdle: true, ct);
 
             Record(PortableRunnerState.Configured, "Configuration completed and exact remote runner ID is persisted.");
             var verifiedCli = await VerifyBeforeStartAsync(ct);
@@ -142,7 +120,7 @@ public sealed class PortableRunnerLifecycle : IDisposable
             {
                 Record(PortableRunnerState.RemoteRemovalPending,
                     runnerId is null
-                        ? "Configuration may have registered remotely; exact numeric identity remains unresolved. Recovery must re-resolve exact evidence before removal."
+                        ? "Configuration or exact ID attribution is uncertain. Leave recovery pending and inspect repository Settings > Actions > Runners manually."
                         : "Configuration registered a remote runner but portable start did not complete; exact removal remains pending.");
             }
             else
@@ -258,12 +236,8 @@ public sealed class PortableRunnerLifecycle : IDisposable
         try
         {
             if (runnerId is null)
-            {
-                if (!registrationMayExist)
-                    throw new PortableRunnerException(PortableRunnerFailure.IdentityUncertain,
-                        "Registration is not known to have reached a stage where exact remote identity can be re-resolved.");
-                await ResolveRunnerIdAsync(maxPolls, interval, requireOfflineIdle: true, ct);
-            }
+                throw new PortableRunnerException(PortableRunnerFailure.IdentityUncertain,
+                    "No numeric runner ID was bound after successful configuration. Inspect repository Settings > Actions > Runners manually.");
 
             var before = await admin.ListAsync(ct);
             var exact = before.SingleOrDefault(
@@ -360,11 +334,11 @@ public sealed class PortableRunnerLifecycle : IDisposable
                 if (match.Id <= 0)
                     throw new PortableRunnerException(PortableRunnerFailure.IdentityUncertain,
                         "The exact-name runner has no usable numeric identity.");
-                runnerId = match.Id;
-                Record(State, "Exact remote runner ID resolved and persisted before any removal token or portable start.");
                 if (requireOfflineIdle && (match.Online || match.Busy))
                     throw new PortableRunnerException(PortableRunnerFailure.IdentityUncertain,
                         "The exact-name runner is online or busy; removal/start is evidence-blocked.");
+                runnerId = match.Id;
+                Record(State, "Exact remote runner ID resolved and persisted after successful configuration, before portable start.");
                 return match;
             }
 
