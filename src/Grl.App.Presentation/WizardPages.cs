@@ -58,3 +58,36 @@ public static class WizardPages
         return new(state, title, body);
     }
 }
+
+public static class LiveWizardPages
+{
+    public static WizardPageViewModel Welcome { get; } = new(null, "LIVE portable runner setup",
+        "Trusted jobs run with your current Windows account permissions. Confirm workplace authorization and the exact private repository before continuing.");
+
+    public static WizardPageViewModel For(WizardState state) => state switch
+    {
+        WizardState.PreflightRunning => new(state, "LIVE preflight", "Checking unelevated portable mode and the selected local root."),
+        WizardState.PreflightBlocked => new(state, "LIVE setup blocked", "Resolve the local safety check before retrying."),
+        WizardState.SignInAwaitingCode or WizardState.SignInPolling => new(state, "GitHub device sign-in",
+            "Enter the displayed code at the GitHub verification URI. Confirm the signed-in account before continuing."),
+        WizardState.SignInSignedIn => new(state, "GitHub account confirmed", "Continue only if this is the intended account."),
+        WizardState.SignInWrongAccount => new(state, "Wrong account", "The signed-in account does not match the target owner."),
+        WizardState.ScopeSelecting => new(state, "Checking exact repository", "Verifying private visibility and administrator permission."),
+        WizardState.ScopeSelected => new(state, "Exact repository selected", "Confirm the displayed private target before installation."),
+        WizardState.ScopeNoAdmin or WizardState.ScopeNotPrivate => new(state, "Repository blocked", "A private repository with administrator permission is required."),
+        WizardState.LocationLocal => new(state, "Local runner folder", "Review the owned local folder before downloading the pinned runner."),
+        WizardState.InstallingDownloading or WizardState.InstallingVerifying or WizardState.InstallingExtracting =>
+            new(state, "Installing reviewed runner", "Downloading, hash checking, and extracting the reviewed official package."),
+        WizardState.InstallingConfiguring => new(state, "Registering portable runner", "Checking name collision and starting the reviewed runner CLI."),
+        WizardState.RunnerOffline => new(state, "Checking runner status", "Waiting for the exact runner to appear online."),
+        WizardState.RunnerIdle => new(state, "Runner online", "The portable runner is online and idle."),
+        WizardState.RunnerBusy => new(state, "Runner busy", "Safe Pause is unavailable. Explicit Stop Now can cancel this or a newly assigned job."),
+        WizardState.RunnerDraining => new(state, "Runner state pending", "Safe automatic Drain is unavailable; the process was not stopped."),
+        WizardState.RunnerPaused => new(state, "Runner stopped explicitly", "The owned process was stopped with Stop Now. Remote registration may remain."),
+        WizardState.RunnerDegraded => new(state, "Runner degraded", "A process or registration may remain. Use exact-identity recovery when available."),
+        WizardState.DisconnectPending or WizardState.DisconnectRemotePending => new(state, "Unregister pending",
+            "Remote removal is pending or unverified. A process from an earlier app session may still be running."),
+        WizardState.DisconnectDone => new(state, "Runner unregistered", "The exact runner is absent from the target repository."),
+        _ => new(state, state.ToString(), "Review the current live state before continuing.")
+    };
+}

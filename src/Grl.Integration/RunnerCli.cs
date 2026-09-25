@@ -9,17 +9,20 @@ public sealed class RunnerCliException(RunnerCliFailure failure, string message)
     public RunnerCliFailure Failure { get; } = failure;
 }
 
-public sealed class RunnerCommand
+public sealed class RunnerCommand : IDisposable
 {
+    private readonly string[] arguments;
     public RunnerCommand(string entryPoint, IReadOnlyList<string> arguments)
     {
         EntryPoint = entryPoint;
-        Arguments = arguments;
+        this.arguments = arguments.ToArray();
+        Arguments = Array.AsReadOnly(this.arguments);
     }
     public string EntryPoint { get; }
     public IReadOnlyList<string> Arguments { get; }
     // Argument vectors may contain a one-hour registration/removal token.
     public override string ToString() => $"{EntryPoint} [arguments redacted]";
+    public void Dispose() => Array.Fill(arguments, string.Empty);
 }
 
 public sealed record RunnerCapabilities(string Version, IReadOnlySet<string> Options);

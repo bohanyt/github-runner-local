@@ -36,6 +36,22 @@ The app is a preview with fake adapters and fictional data only. To inspect a sc
 
 ## Checkpoint C
 
-The solution includes the plain `net10.0` Integration library and deterministic fake-HTTP/synthetic-archive tests. It does not connect these adapters to the WPF app. Run the solution commands above in order; the Integration tests use no live GitHub network.
+The solution includes the plain `net10.0` Integration library and deterministic fake-HTTP/synthetic-archive tests. Run the solution commands above in order; the Integration tests use no live GitHub network.
 
 The separate `tests/Grl.RunnerContractProbe` project is intentionally outside the solution. On a non-elevated Windows machine with .NET 10, build it with `dotnet build tests/Grl.RunnerContractProbe/Grl.RunnerContractProbe.csproj -warnaserror`, then from the repository root run `dotnet run --project tests/Grl.RunnerContractProbe/Grl.RunnerContractProbe.csproj --no-build -- runner-pins.json`. It downloads only the reviewed official Windows x64 runner, checks its SHA-256 before extraction, and invokes only `Runner.Listener.exe --version` and `config.cmd --help`. It creates and removes one unique temporary directory. It never registers or starts a runner. The pin is initial-install metadata; GitHub's normal runner auto-update remains enabled for later live work.
+
+## Checkpoint D source
+
+The default WPF launch still uses fictional preview adapters. Live composition is selected only with the complete, non-secret argument set below, after a separate live acceptance dispatch:
+
+```text
+GitHubRunnerLocal.exe --live --client-id CLIENT_ID --repo OWNER/PRIVATE_REPO --runner-name RUNNER_NAME --root OWNED_LOCAL_ROOT
+```
+
+The root must already be an ordinary local directory on C:. No access, registration, or removal token is accepted as a command-line argument. Source validation does not launch `--live` or perform device login, registration, runner start, or execution-repository activation.
+
+Safe automatic Pause/Drain is unavailable for the reviewed portable runner. Unregister refuses a live owned process. The separately requested **Stop Now** action can cancel an active or newly assigned job. Closing or crashing the wizard does not guarantee that the runner process stops.
+
+The installed `runner` folder holds a bounded, non-secret `.grl-recovery.json` and a single-session recovery lease. Relaunch with the same arguments and existing root to enter recovery-only mode after confirming the exact GitHub account and private repository. This path never downloads/configures again or adopts an unknown process. Exact-ID remote removal is offered only when saved evidence rules out a surviving process and the live API confirms the same offline, nonbusy runner; otherwise leave the root and remote state pending for inspection. A missing, corrupt, redirected or conflicting recovery file blocks installation. Repeated activation from an existing root is not part of this D source correction.
+
+For the D source campaign, run `dotnet restore GitHubRunnerLocal.sln`, `dotnet build GitHubRunnerLocal.sln -warnaserror`, `dotnet test GitHubRunnerLocal.sln`, then `dotnet test GitHubRunnerLocal.sln --no-build`. The Integration tests use fake HTTP/process adapters; the separate Windows runner contract probe above is read-only. The production batch boundary invokes only the pinned `config.cmd`/`run.cmd` from the verified runner root through the fixed Windows command interpreter with structured arguments and strict character/shape validation.

@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="GitHub Runner Local — Preview" Width="900" Height="700"
-        MinWidth="640" MinHeight="480" Loaded="Window_Loaded"
+        MinWidth="640" MinHeight="480" Loaded="Window_Loaded" Closing="Window_Closing"
         Background="{DynamicResource {x:Static SystemColors.WindowBrushKey}}"
         Foreground="{DynamicResource {x:Static SystemColors.WindowTextBrushKey}}">
     <Window.Resources>
@@ -14,7 +14,7 @@
         </Style>
     </Window.Resources>
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
-                  AutomationProperties.Name="Preview wizard content">
+                  AutomationProperties.Name="{Binding PreviewBanner}">
         <StackPanel Margin="24">
             <Border Padding="12" BorderThickness="2" BorderBrush="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}">
                 <TextBlock Text="{Binding PreviewBanner}" TextWrapping="Wrap" FontWeight="Bold"
@@ -31,24 +31,43 @@
                 <CheckBox x:Name="AcknowledgeBox" Content="_I understand the trusted-code and workplace disclosure"
                           IsChecked="{Binding Acknowledged, Mode=TwoWay}" Margin="0,0,0,14"
                           AutomationProperties.Name="Welcome trusted-code acknowledgement" />
-                <Button Content="_Continue preview" Command="{Binding WelcomeContinueCommand}"
+                <Button Content="{Binding WelcomeContinueLabel}" Command="{Binding WelcomeContinueCommand}"
                         IsDefault="True" HorizontalAlignment="Left"
-                        AutomationProperties.Name="Welcome continue preview" />
+                        AutomationProperties.Name="{Binding WelcomeContinueLabel}" />
             </StackPanel>
 
             <StackPanel Visibility="{Binding IsInWizard, Converter={StaticResource BoolToVisibility}}">
                 <TextBlock Text="{Binding DeviceCodeText}" TextWrapping="Wrap" Margin="0,0,0,8"
                            AutomationProperties.Name="{Binding DeviceCodeText}" />
+                <TextBlock Text="{Binding SignedInAccountText}" TextWrapping="Wrap" Margin="0,0,0,8"
+                           AutomationProperties.Name="{Binding SignedInAccountText}" />
+                <CheckBox Content="I confirm this is my intended GitHub account"
+                          IsChecked="{Binding AccountConfirmed, Mode=TwoWay}"
+                          Visibility="{Binding ShowAccountConfirmation, Converter={StaticResource BoolToVisibility}}"
+                          AutomationProperties.Name="Confirm signed-in GitHub account" />
                 <TextBlock Text="{Binding PreflightReasonText}" TextWrapping="Wrap" Margin="0,0,0,8"
                            AutomationProperties.Name="{Binding PreflightReasonText}" />
                 <TextBlock Text="{Binding RepositoryListText, StringFormat=Fictional repositories: {0}}"
+                           Visibility="{Binding IsPreview, Converter={StaticResource BoolToVisibility}}"
                            TextWrapping="Wrap" Margin="0,0,0,8"
                            AutomationProperties.Name="Fictional repository list" />
                 <TextBlock Text="{Binding SelectedRepositoryText}" TextWrapping="Wrap" Margin="0,0,0,8"
                            AutomationProperties.Name="{Binding SelectedRepositoryText}" />
+                <CheckBox Content="I confirm this exact private repository"
+                          IsChecked="{Binding TargetConfirmed, Mode=TwoWay}"
+                          Visibility="{Binding ShowTargetConfirmation, Converter={StaticResource BoolToVisibility}}"
+                          AutomationProperties.Name="Confirm exact private repository" />
                 <TextBlock Text="{Binding LocationText, StringFormat=Proposed fictional location: {0}}"
+                           Visibility="{Binding IsPreview, Converter={StaticResource BoolToVisibility}}"
                            TextWrapping="Wrap" Margin="0,0,0,14"
                            AutomationProperties.Name="Fictional local location" />
+                <TextBlock Text="{Binding LocationText, StringFormat=Owned local root: {0}}"
+                           Visibility="{Binding IsLive, Converter={StaticResource BoolToVisibility}}"
+                           TextWrapping="Wrap" Margin="0,0,0,14"
+                           AutomationProperties.Name="Owned local runner root" />
+                <TextBlock Text="{Binding RunnerPresenceText}" TextWrapping="Wrap" Margin="0,0,0,12"
+                           Visibility="{Binding IsLive, Converter={StaticResource BoolToVisibility}}"
+                           AutomationProperties.Name="{Binding RunnerPresenceText}" />
                 <ItemsControl ItemsSource="{Binding Actions}" AutomationProperties.Name="Available wizard actions">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
@@ -62,11 +81,16 @@
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
                 <Button Content="Preview _remove local files plan" Command="{Binding PreviewRemovalCommand}"
+                        Visibility="{Binding IsPreview, Converter={StaticResource BoolToVisibility}}"
                         HorizontalAlignment="Left" Margin="0,8,0,0"
                         AutomationProperties.Name="Preview local file removal plan" />
                 <TextBlock Text="{Binding DeletionPlanText}" TextWrapping="Wrap" Margin="0,8,0,12"
                            AutomationProperties.Name="{Binding DeletionPlanText}" />
+                <Button Content="_Stop Now (may cancel an active or newly assigned job)" Command="{Binding StopNowCommand}"
+                        Visibility="{Binding IsLive, Converter={StaticResource BoolToVisibility}}"
+                        HorizontalAlignment="Left" AutomationProperties.Name="Stop owned runner now" />
                 <Expander Header="Preview simulation controls" Margin="0,8,0,12"
+                          Visibility="{Binding IsPreview, Converter={StaticResource BoolToVisibility}}"
                           AutomationProperties.Name="Preview simulation controls">
                     <StackPanel>
                     <ItemsControl ItemsSource="{Binding SimulationActions}"

@@ -19,43 +19,58 @@ public sealed class FakeClock : IClock
         new(2026, 9, 24, 0, 0, 0, TimeSpan.Zero);
 }
 
-public sealed record FakeAdapterResult(WizardEvent? Event, string? ErrorCode = null);
+public sealed record AdapterResult(WizardEvent? Event, string? ErrorCode = null, string? DisplayData = null);
+
+public sealed class AdapterOperationException(string errorCode) : Exception(errorCode)
+{
+    public string ErrorCode { get; } = errorCode;
+}
+
+public sealed record DeviceCodeDisplay(string UserCode, Uri VerificationUri);
+public sealed record TargetSelection(string RepositoryName, WizardEvent Event);
 
 public interface IPreflightAdapter
 {
-    Task<WizardEvent> CheckAsync(FakeScenario scenario);
+    Task<WizardEvent> CheckAsync();
 }
 
 public interface IDeviceSignInAdapter
 {
-    Task<string> IssueCodeAsync();
-    Task<FakeAdapterResult> PollAsync(FakeScenario scenario);
+    Task<DeviceCodeDisplay> IssueCodeAsync();
+    Task<AdapterResult> PollAsync();
+    void CancelSignIn();
 }
 
 public interface IExecutionTargetAdapter
 {
-    Task<(FakeRepository Repository, WizardEvent Event)> SelectAsync(FakeScenario scenario);
+    Task<TargetSelection> SelectAsync();
 }
 
 public interface ILocationAdapter
 {
-    Task<WizardEvent?> EvaluateAsync(FakeScenario scenario);
+    Task<WizardEvent?> EvaluateAsync();
     WindowsDeletionPlan PreviewRemoval();
 }
 
 public interface IRunnerPackageAdapter
 {
-    Task<FakeAdapterResult> AdvanceAsync(WizardState state, FakeScenario scenario);
+    Task<AdapterResult> AdvanceAsync(WizardState state);
 }
 
 public interface IRunnerControllerAdapter
 {
-    Task<WizardEvent> StartAsync(FakeScenario scenario);
+    bool HasOwnedProcess { get; }
+    Task<WizardEvent> StartAsync();
+    Task DrainAsync();
+    Task ResumeAsync();
+    Task StopNowAsync();
+    Task<AdapterResult> RefreshAsync(WizardState state);
 }
 
 public interface IDisconnectAdapter
 {
-    Task<WizardEvent> RemoveAsync(FakeScenario scenario);
+    bool HasPendingRecovery { get; }
+    Task<WizardEvent> RemoveAsync();
 }
 
 public sealed record WizardAdapters(
@@ -67,19 +82,19 @@ public sealed record WizardAdapters(
     IRunnerControllerAdapter RunnerController,
     IDisconnectAdapter Disconnect)
 {
-    public static WizardAdapters CreateFake() => new(
-        new FakePreflightAdapter(),
-        new FakeDeviceSignInAdapter(),
-        new FakeExecutionTargetAdapter(),
-        new FakeLocationAdapter(),
-        new FakeRunnerPackageAdapter(),
-        new FakeRunnerControllerAdapter(),
-        new FakeDisconnectAdapter());
+    public static WizardAdapters CreateFake(FakeScenario scenario = FakeScenario.HappyPath) => new(
+        new FakePreflightAdapter(scenario),
+        new FakeDeviceSignInAdapter(scenario),
+        new FakeExecutionTargetAdapter(scenario),
+        new FakeLocationAdapter(scenario),
+        new FakeRunnerPackageAdapter(scenario),
+        new FakeRunnerControllerAdapter(scenario),
+        new FakeDisconnectAdapter(scenario));
 }
 
-public sealed class FakePreflightAdapter : IPreflightAdapter
+public sealed class FakePreflightAdapter(FakeScenario scenario) : IPreflightAdapter
 {
-    public Task<WizardEvent> CheckAsync(FakeScenario scenario)
+    public Task<WizardEvent> CheckAsync()
     {
         // The settings and disk figures are invented and remain in memory.
         var settings = SettingsV1.Parse("{\"schema_version\":\"grl.settings.v1\",\"mode\":\"portable\"}");
@@ -89,23 +104,25 @@ public sealed class FakePreflightAdapter : IPreflightAdapter
     }
 }
 
-public sealed class FakeDeviceSignInAdapter : IDeviceSignInAdapter
+public sealed class FakeDeviceSignInAdapter(FakeScenario scenario) : IDeviceSignInAdapter
 {
-    public Task<string> IssueCodeAsync() => Task.FromResult(FakeDataCatalog.DeviceCode);
+    public Task<DeviceCodeDisplay> IssueCodeAsync() => Task.FromResult(
+        new DeviceCodeDisplay(FakeDataCatalog.DeviceCode, new Uri("https://github.com/login/device")));
 
-    public Task<FakeAdapterResult> PollAsync(FakeScenario scenario) => Task.FromResult(scenario switch
+    public Task<AdapterResult> PollAsync() => Task.FromResult(scenario switch
     {
-        FakeScenario.SignInDenied => new FakeAdapterResult(WizardEvent.Denied),
-        FakeScenario.SignInExpired => new FakeAdapterResult(WizardEvent.Expired),
-        FakeScenario.SignInWrongAccount => new FakeAdapterResult(WizardEvent.WrongAccount),
-        FakeScenario.SignInNetworkError => new FakeAdapterResult(null, "SIGNIN_NETWORK_ERROR"),
-        _ => new FakeAdapterResult(WizardEvent.SignedIn)
+        FakeScenario.SignInDenied => new AdapterResult(WizardEvent.Denied),
+        FakeScenario.SignInExpired => new AdapterResult(WizardEvent.Expired),
+        FakeScenario.SignInWrongAccount => new AdapterResult(WizardEvent.WrongAccount),
+        FakeScenario.SignInNetworkError => new AdapterResult(null, "SIGNIN_NETWORK_ERROR"),
+        _ => new AdapterResult(WizardEvent.SignedIn)
     });
+    public void CancelSignIn() { }
 }
 
-public sealed class FakeExecutionTargetAdapter : IExecutionTargetAdapter
+public sealed class FakeExecutionTargetAdapter(FakeScenario scenario) : IExecutionTargetAdapter
 {
-    public Task<(FakeRepository Repository, WizardEvent Event)> SelectAsync(FakeScenario scenario)
+    public Task<TargetSelection> SelectAsync()
     {
         var repository = scenario switch
         {
@@ -115,17 +132,19 @@ public sealed class FakeExecutionTargetAdapter : IExecutionTargetAdapter
         };
         var selection = !repository.IsPrivate ? WizardEvent.NotPrivate
             : !repository.HasAdminAccess ? WizardEvent.NoAdmin : WizardEvent.Selected;
-        return Task.FromResult((repository, selection));
+        return Task.FromResult(new TargetSelection(repository.Name, selection));
     }
 }
 
 public sealed class FakeLocationAdapter : ILocationAdapter
 {
+    private readonly FakeScenario scenario;
     private readonly FakeFileSystemView _view = new();
     private readonly WindowsPathPolicy _policy;
 
-    public FakeLocationAdapter()
+    public FakeLocationAdapter(FakeScenario scenario = FakeScenario.HappyPath)
     {
+        this.scenario = scenario;
         _view.AddAncestors(FakeDataCatalog.PreferredPath);
         _view.AddAncestors(FakeDataCatalog.FallbackPath);
         var root = FakeDataCatalog.PreferredPath;
@@ -136,7 +155,7 @@ public sealed class FakeLocationAdapter : ILocationAdapter
         _policy = new WindowsPathPolicy(_view);
     }
 
-    public Task<WizardEvent?> EvaluateAsync(FakeScenario scenario)
+    public Task<WizardEvent?> EvaluateAsync()
     {
         var result = scenario switch
         {
@@ -166,31 +185,37 @@ public sealed class FakeLocationAdapter : ILocationAdapter
     }
 }
 
-public sealed class FakeRunnerPackageAdapter : IRunnerPackageAdapter
+public sealed class FakeRunnerPackageAdapter(FakeScenario scenario) : IRunnerPackageAdapter
 {
-    public Task<FakeAdapterResult> AdvanceAsync(WizardState state, FakeScenario scenario) =>
+    public Task<AdapterResult> AdvanceAsync(WizardState state) =>
         Task.FromResult(state switch
         {
-            WizardState.InstallingDownloading => new FakeAdapterResult(WizardEvent.Downloaded),
+            WizardState.InstallingDownloading => new AdapterResult(WizardEvent.Downloaded),
             WizardState.InstallingVerifying when scenario == FakeScenario.InstallVerifyFailed =>
-                new FakeAdapterResult(null, "INSTALL_VERIFY_FAILED"),
-            WizardState.InstallingVerifying => new FakeAdapterResult(WizardEvent.Verified),
-            WizardState.InstallingExtracting => new FakeAdapterResult(WizardEvent.Extracted),
-            WizardState.InstallingConfiguring => new FakeAdapterResult(WizardEvent.Configured),
-            _ => new FakeAdapterResult(null, "INVALID_TRANSITION")
+                new AdapterResult(null, "INSTALL_VERIFY_FAILED"),
+            WizardState.InstallingVerifying => new AdapterResult(WizardEvent.Verified),
+            WizardState.InstallingExtracting => new AdapterResult(WizardEvent.Extracted),
+            WizardState.InstallingConfiguring => new AdapterResult(WizardEvent.Configured),
+            _ => new AdapterResult(null, "INVALID_TRANSITION")
         });
 }
 
-public sealed class FakeRunnerControllerAdapter : IRunnerControllerAdapter
+public sealed class FakeRunnerControllerAdapter(FakeScenario scenario) : IRunnerControllerAdapter
 {
-    public Task<WizardEvent> StartAsync(FakeScenario scenario) =>
+    public bool HasOwnedProcess => false;
+    public Task<WizardEvent> StartAsync() =>
         Task.FromResult(scenario == FakeScenario.RunnerDegraded
             ? WizardEvent.Degraded : WizardEvent.Online);
+    public Task DrainAsync() => Task.CompletedTask;
+    public Task ResumeAsync() => Task.CompletedTask;
+    public Task StopNowAsync() => Task.CompletedTask;
+    public Task<AdapterResult> RefreshAsync(WizardState state) => Task.FromResult(new AdapterResult(null));
 }
 
-public sealed class FakeDisconnectAdapter : IDisconnectAdapter
+public sealed class FakeDisconnectAdapter(FakeScenario scenario) : IDisconnectAdapter
 {
-    public Task<WizardEvent> RemoveAsync(FakeScenario scenario) =>
+    public bool HasPendingRecovery => false;
+    public Task<WizardEvent> RemoveAsync() =>
         Task.FromResult(scenario == FakeScenario.DisconnectRemoteUnavailable
             ? WizardEvent.RemoteUnavailable : WizardEvent.RemoteRemoved);
 }
