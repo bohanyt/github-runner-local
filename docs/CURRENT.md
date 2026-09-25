@@ -1,53 +1,38 @@
 # CURRENT — github-runner-local
 
-Updated: 2026-09-25. Phase: **D_CORRECTION_READY; OFFICE_G1_GATED**.
+Updated: 2026-09-25. Phase: **D_FAIL_CLOSED_CORRECTION_READY; OFFICE_G1_GATED**.
 
 ## Authority
 
 - Canonical branch: `main`.
 - Control Tower: Issue #1, owner-designated successor CT.
-- Current handoff: `docs/control-tower/handoffs/GRL-20260925-D-CORRECTION-RD1-RD2-G1-GATED-V29.md`.
-- Required sentinel: `END_OF_GRL_HANDOFF key=GRL-20260925-D-CORRECTION-RD1-RD2-G1-GATED-V29 sections=8`.
+- Current handoff: `docs/control-tower/handoffs/GRL-20260925-D-FAIL-CLOSED-CORRECTION-G1-GATED-V30.md`.
+- Required sentinel: `END_OF_GRL_HANDOFF key=GRL-20260925-D-FAIL-CLOSED-CORRECTION-G1-GATED-V30 sections=8`.
 
 ## Source state
 
-C and E are independently review-clean and merged:
-- C merge `451d3ab889f9f63f45ebf90ba54ddece7b60e6eb`.
-- E merge `a296f3f9dfa362f6a53d20ff81a46eef7a519819`.
+C and E are independently review-clean and merged (C `451d3ab889f9f63f45ebf90ba54ddece7b60e6eb`; E `a296f3f9dfa362f6a53d20ff81a46eef7a519819`).
 
-D source is **NOT merged**. DRAFT PR #17 is on branch `feat/grl-d-portable-lifecycle` at independently reviewed head `b14ff5fa108a4a1891efbc03f700bbffaaa3cfcf`. Its source base at publication was `be6a34872db8c059de060fafbb4188a0e39e1ce1`; later main authority-doc advancement is expected.
+D source is **NOT merged**. DRAFT PR #17 branch `feat/grl-d-portable-lifecycle` remains at `b14ff5fa108a4a1891efbc03f700bbffaaa3cfcf`; original D source base `be6a34872db8c059de060fafbb4188a0e39e1ce1`. The independent review Issue #16 `5828083061` found R-D-1 unsafe Drain/unregister assignment race and R-D-2 inaccessible partial-configure cleanup. Both are still open. Windows build/tests at the unchanged head passed 352/352 twice, but reproduced races remain; evidence `LOCAL_CHECKED`.
 
-## Independent D result
+## CT technical decision
 
-Issue #16 review comment `5828083061`: **NEEDS_D_CORRECTION**, 2 blocking findings at that exact head:
-- R-D-1: Drain/unregister may kill a job assigned after an absent/idle status snapshot.
-- R-D-2: Partial configure failure can strand the live wizard without cleanup.
+Blocked correction handoff Issue #16 `5828419459` established that pinned runner v2.337.0 Ctrl+C requests shutdown and can cancel an active job. No supported safe automatic Drain is proved inside the reviewed portable CLI contract. Decision D31: D source must fail closed, with no automatic drain/stop or implicit unregister from remote idle/absent snapshots. Distinct explicit Stop Now warns of job cancellation. D32 / Issue #18: admission fence and safe office/personal switch are OPEN, not accepted.
 
-Reviewer release: Issue #1 comment `5828088332`.
+## Active task: revised bounded correction
 
-Independent Windows build and two test runs passed 352/352 each; deterministic harness reproduced both defects. Separate runner probe download stalled; independently hash-verified production installer and read-only CLI adapter witness passed. Evidence remains `LOCAL_CHECKED`, not real G1/`WINDOWS_TESTED`.
+Issue #16 CT packet `5828534853` supersedes the prior correction packet where they conflict. ONE worker uses SAME branch/PR, starting from unchanged head, within the existing D source/test allowlist. Correct R-D-1 by disabling unsafe automatic Drain and implicit stop during unregister; correct R-D-2 with accessible live UI recovery and non-secret pending/cleanup path. Run deterministic race/recovery proof plus Windows restore/build/twice tests and read-only witness. Publish exact-head handoff and release. DIFFERENT independent reviewer must rereview; no merge yet.
 
-## Active task: bounded correction
+## Owner-approved live topology and gate
 
-Issue #16 CT correction packet `5828348757` governs ONE worker on the SAME branch and SAME DRAFT PR #17, starting from `b14ff5fa108a4a1891efbc03f700bbffaaa3cfcf`. Fix only R-D-1/R-D-2 within Issue #16's source/test allowlist, run proof, push normal fast-forward, publish handoff, release and stop. No self-review or merge.
+OD-1/D09 private execution repo `bohanyt/github-runner-local-exec`; OD-2/D10 owner-only Device Flow App; OD-7/D29 office Windows laptop `grl-office` approved for first portable unelevated trusted-code-only G1. D30 conditionally authorizes `grl-personal` after G1 PASS with one matching `grl-exec` runner active at a time.
 
-If safe cooperative Drain cannot be established within the reviewed runner contract, worker reports `D_CORRECTION_BLOCKED_RD1` to CT instead of declaring success. A different reviewer must rereview any corrected exact head.
-
-## Owner-approved live topology
-
-- OD-1/D09: dedicated private repo `bohanyt/github-runner-local-exec`.
-- OD-2/D10: owner-only Device Flow App for acceptance; Client ID on Issue #14; installation settings owner-attested.
-- OD-7/D29: current office Windows laptop approved for first portable unelevated trusted-code-only `grl-office`.
-- D30: `grl-personal` only after G1 PASS, separate credentials and one active matching `grl-exec` runner at a time.
-
-## Gated live task
-
-Issue #15 office G1 remains GATED until D correction, independent exact-head PASS and separate CT/owner merge. No source test or read-only probe substitutes for real Device Flow, runner online and harmless same-repo workflow witness.
+Issue #15 G1 remains GATED until source correction, independent exact-head PASS and separate CT/owner merge. Issue #15 clarification `5828537511` forbids implicit Stop Now/unregister on active process during failed enrollment. G1 execution does not prove a safe two-laptop switch; Issue #18 tracks that separate procedure.
 
 ## Standing boundaries
 
-No GitHub-hosted Actions; Stage-2/cross-repo credentials or workload; public App distribution; service/UAC/elevated helper; arbitrary shell inbox; personal enrollment before G1 PASS; signing/release.
+No GitHub-hosted Actions; live login/runner registration/start or private template activation under D source work; Stage-2/cross-repo credentials or workload; public App distribution; service/UAC/elevated helper; arbitrary shell inbox; personal activation without G1 PASS and a proved one-active-at-a-time procedure; signing/release.
 
 ## Next
 
-Dispatch one bounded D correction worker from Issue #16 packet `5828348757`. CT handles a blocked design question or subsequent independent rereview.
+Dispatch one bounded D fail-closed correction worker from Issue #16 `5828534853`. CT then arranges a different independent exact-head reviewer and handles a separate merge/G1 gate.
