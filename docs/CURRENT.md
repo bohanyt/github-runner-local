@@ -21,7 +21,7 @@ Blocked correction handoff Issue #16 `5828419459` established that pinned runner
 
 ## Active task: revised bounded correction
 
-Issue #16 CT packet `5828534853` plus product-gap addendum `5828855949` govern ONE worker on the SAME branch/PR from the unchanged head and within the original D source/test allowlist. Correct R-D-1 by disabling unsafe automatic Drain/implicit stop, including register/resume failure catches; correct R-D-2 with accessible live recovery and bounded persisted non-secret state on reopen; supply E-required runner version/identity metadata at child start; show truthful live UI. Run permanent race/recovery/integration regressions plus Windows restore/build/twice tests and read-only witness. Publish exact-head handoff and release. DIFFERENT independent reviewer must rereview; no merge yet. Advisory product audit Issue #1 `5828798876` is source-only; it is not a G1 or review PASS.
+Issue #16 CT packet `5828534853` plus product-gap addendum `5828855949` govern ONE worker on the SAME branch/PR from the unchanged head and within the original D source/test allowlist. Correct R-D-1 by disabling unsafe automatic Drain/implicit stop, including register/resume failure catches; correct R-D-2 with accessible live recovery and bounded persisted non-secret state on reopen; supply E-required runner version/identity metadata at child start; show truthful live UI. Run every compatible cloud/Linux deterministic check, report exact limits, publish a `WINDOWS_PENDING` source handoff and release. Issue #16 sequencing addendum `5829054146` records D33: no cloud Windows environment is available. DIFFERENT reviewer may source-rereview the exact head; before merge, a separate read-only build/tests/CLI proof must run on the current office Windows laptop. Only after merge may Issue #15 live G1 run. Advisory product audit Issue #1 `5828798876` is source-only; it is not a G1 or review PASS.
 
 ## Owner-approved live topology and gate
 
@@ -35,4 +35,4 @@ No GitHub-hosted Actions; live login/runner registration/start or private templa
 
 ## Next
 
-Dispatch one bounded D fail-closed correction worker using Issue #16 `5828534853` **and addendum `5828855949`** on the same draft PR. CT then arranges a different independent exact-head reviewer and handles a separate merge/G1 gate. No extra planning round before this correction.
+Dispatch one bounded cloud/Linux D correction worker using Issue #16 `5828534853`, product addendum `5828855949` and no-cloud-Windows sequencing `5829054146` on the same draft PR. CT then arranges independent exact-head source review, office-laptop read-only Windows proof, merge gate and G1. No extra planning round before source correction.
