@@ -20,6 +20,7 @@ public interface IOwnedRunnerProcess : IDisposable
 public interface IRunnerProcessAdapter
 {
     Task ExecuteAsync(RunnerCommand command, CancellationToken ct);
+    Task<IRunnerCli> VerifyCliAsync(CancellationToken ct);
     Task<IOwnedRunnerProcess> StartAsync(RunnerCommand command, string verifiedVersion, CancellationToken ct);
 }
 
