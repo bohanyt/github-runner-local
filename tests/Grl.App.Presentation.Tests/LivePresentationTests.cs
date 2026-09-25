@@ -147,7 +147,7 @@ public sealed class LivePresentationTests
 
         Assert.Equal(WizardState.RunnerPaused, session.State);
         Assert.Equal("RUNNER_VERSION_UNSUPPORTED", session.ActiveError?.Code);
-        Assert.Contains("self-updated", session.ErrorWhatHappened, StringComparison.OrdinalIgnoreCase);
+        Assert.True(session.ErrorWhatHappened.Contains("self-updated", StringComparison.OrdinalIgnoreCase));
         Assert.Equal(1, adapter.ResumeCount);
     }
 
@@ -165,8 +165,8 @@ public sealed class LivePresentationTests
 
         Assert.Equal(WizardState.DisconnectRemotePending, session.State);
         Assert.Equal("DISCONNECT_IDENTITY_BLOCKED", session.ActiveError?.Code);
-        Assert.Contains("Do not keep retrying", session.ErrorNextStep, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Settings > Actions > Runners", session.ErrorNextStep, StringComparison.Ordinal);
+        Assert.True(session.ErrorNextStep.Contains("Do not keep retrying", StringComparison.OrdinalIgnoreCase));
+        Assert.True(session.ErrorNextStep.Contains("Settings > Actions > Runners", StringComparison.Ordinal));
         Assert.Equal(1, adapter.RemoveCount);
     }
 
