@@ -68,11 +68,29 @@ internal sealed class LiveWizardAdapters : IPreflightAdapter, IDeviceSignInAdapt
     private PortableRunnerLifecycle? lifecycle;
     private PortableRecoveryStore? recoveryStore;
     private PortableRecoveryEvidence? reopened;
+    private readonly IRunnerAdministration? recoveryAdminOverride;
+    private readonly IAsyncDelay recoveryDelay;
 
     public LiveWizardAdapters(LiveRuntimeOptions options)
     {
         this.options = options;
+        recoveryDelay = new SystemAsyncDelay();
         flow = new GitHubDeviceFlow(apiHttp, options.ClientId);
+    }
+
+    internal LiveWizardAdapters(LiveRuntimeOptions options, IRunnerAdministration recoveryAdmin,
+        PortableRecoveryStore recoveryStore, PortableRecoveryEvidence reopened, IAsyncDelay recoveryDelay)
+        : this(options)
+    {
+        ArgumentNullException.ThrowIfNull(recoveryAdmin);
+        ArgumentNullException.ThrowIfNull(recoveryStore);
+        ArgumentNullException.ThrowIfNull(reopened);
+        ArgumentNullException.ThrowIfNull(recoveryDelay);
+        selected = recoveryAdmin.Repository;
+        recoveryAdminOverride = recoveryAdmin;
+        this.recoveryStore = recoveryStore;
+        this.reopened = reopened;
+        this.recoveryDelay = recoveryDelay;
     }
 
     public Task<WizardEvent> CheckAsync() => Task.FromResult(
@@ -199,6 +217,10 @@ internal sealed class LiveWizardAdapters : IPreflightAdapter, IDeviceSignInAdapt
                     return new AdapterResult(null, "INVALID_TRANSITION");
             }
         }
+        catch (PortableRunnerException error) when (error.Failure == PortableRunnerFailure.UnsupportedVersion)
+        {
+            return new AdapterResult(null, "RUNNER_VERSION_UNSUPPORTED");
+        }
         catch
         {
             return new AdapterResult(null, state switch
@@ -238,7 +260,14 @@ internal sealed class LiveWizardAdapters : IPreflightAdapter, IDeviceSignInAdapt
     public async Task ResumeAsync()
     {
         if (lifecycle is null) throw new InvalidOperationException("Runner lifecycle unavailable.");
-        await lifecycle.ResumeAsync(20, TimeSpan.FromSeconds(3), CancellationToken.None);
+        try
+        {
+            await lifecycle.ResumeAsync(20, TimeSpan.FromSeconds(3), CancellationToken.None);
+        }
+        catch (PortableRunnerException error) when (error.Failure == PortableRunnerFailure.UnsupportedVersion)
+        {
+            throw new AdapterOperationException("RUNNER_VERSION_UNSUPPORTED");
+        }
     }
 
     public async Task StopNowAsync()
@@ -268,8 +297,11 @@ internal sealed class LiveWizardAdapters : IPreflightAdapter, IDeviceSignInAdapt
 
     public async Task<WizardEvent> RemoveAsync()
     {
-        if (HasOwnedProcess) return WizardEvent.RemoteUnavailable;
-        if (selected is null || access is null || recoveryStore is null) return WizardEvent.RemoteUnavailable;
+        if (HasOwnedProcess)
+            throw new AdapterOperationException("DISCONNECT_PROCESS_UNCERTAIN");
+        if (selected is null || recoveryStore is null || (access is null && recoveryAdminOverride is null))
+            throw new AdapterOperationException("DISCONNECT_REMOTE_UNAVAILABLE");
+
         try
         {
             if (lifecycle is not null)
@@ -278,31 +310,139 @@ internal sealed class LiveWizardAdapters : IPreflightAdapter, IDeviceSignInAdapt
                 return lifecycle.State == PortableRunnerState.Removed
                     ? WizardEvent.RemoteRemoved : WizardEvent.RemoteUnavailable;
             }
+
             // Reopen is recovery-only: no process is adopted and no local CLI is executed.
-            if (reopened is not { CanAttemptExactRemoteRemoval: true, RunnerId: long id })
-                return WizardEvent.RemoteUnavailable;
-            var admin = new GitHubRunnerAdministration(apiHttp, access, selected);
+            if (reopened is null)
+                throw new AdapterOperationException("DISCONNECT_IDENTITY_BLOCKED");
+            if (reopened.MayHaveUnownedProcess)
+                throw new AdapterOperationException("DISCONNECT_PROCESS_UNCERTAIN");
+            if (reopened.State is PortableRunnerState.Ready or PortableRunnerState.Removed)
+                throw new AdapterOperationException("DISCONNECT_IDENTITY_BLOCKED");
+
+            var admin = recoveryAdminOverride ??
+                new GitHubRunnerAdministration(apiHttp, access!, selected);
+            var id = await ResolveReopenedRunnerIdAsync(admin, CancellationToken.None);
+
             await admin.DeleteStaleAsync(id, options.RunnerName, CancellationToken.None);
             var remaining = await admin.ListAsync(CancellationToken.None);
-            if (remaining.Any(x => x.Id == id || x.Name.Equals(options.RunnerName, StringComparison.OrdinalIgnoreCase)))
+            if (remaining.Any(x => x.Id == id ||
+                x.Name.Equals(options.RunnerName, StringComparison.OrdinalIgnoreCase)))
             {
                 recoveryStore.Write(id, PortableRunnerState.RemoteRemovalPending);
+                reopened = reopened with { RunnerId = id, State = PortableRunnerState.RemoteRemovalPending };
                 return WizardEvent.RemoteUnavailable;
             }
+
             recoveryStore.Write(id, PortableRunnerState.Removed);
-            reopened = reopened with { State = PortableRunnerState.Removed };
+            reopened = reopened with { RunnerId = id, State = PortableRunnerState.Removed };
             return WizardEvent.RemoteRemoved;
+        }
+        catch (AdapterOperationException)
+        {
+            PreserveReopenPending();
+            throw;
+        }
+        catch (PortableRunnerException error) when (error.Failure ==
+            PortableRunnerFailure.PossibleSurvivingProcess || error.Failure == PortableRunnerFailure.ActiveProcess)
+        {
+            throw new AdapterOperationException("DISCONNECT_PROCESS_UNCERTAIN");
+        }
+        catch (PortableRunnerException error) when (error.Failure == PortableRunnerFailure.IdentityUncertain)
+        {
+            PreserveReopenPending();
+            throw new AdapterOperationException("DISCONNECT_IDENTITY_BLOCKED");
+        }
+        catch (PortableRunnerException error) when (error.Failure == PortableRunnerFailure.RemoteUnavailable)
+        {
+            PreserveReopenPending();
+            throw new AdapterOperationException("DISCONNECT_REMOTE_UNAVAILABLE");
         }
         catch
         {
+            PreserveReopenPending();
+            throw new AdapterOperationException("DISCONNECT_REMOTE_UNAVAILABLE");
+        }
+    }
+
+    private async Task<long> ResolveReopenedRunnerIdAsync(IRunnerAdministration admin, CancellationToken ct)
+    {
+        const int maxPolls = 20;
+        var successfulLists = 0;
+        Exception? lastRemoteError = null;
+
+        for (var attempt = 0; attempt < maxPolls; attempt++)
+        {
+            ct.ThrowIfCancellationRequested();
+            IReadOnlyList<RepositoryRunner> listed;
             try
             {
-                if (lifecycle is null)
-                    recoveryStore.Write(reopened?.RunnerId, PortableRunnerState.RemoteRemovalPending,
-                        reopened?.MayHaveUnownedProcess ?? true);
+                listed = await admin.ListAsync(ct);
+                successfulLists++;
             }
-            catch { /* preserve existing evidence when storage is unavailable */ }
-            return WizardEvent.RemoteUnavailable;
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception error)
+            {
+                lastRemoteError = error;
+                if (attempt + 1 < maxPolls)
+                    await recoveryDelay.WaitAsync(TimeSpan.FromSeconds(3), ct);
+                continue;
+            }
+
+            var sameName = listed
+                .Where(x => x.Name.Equals(options.RunnerName, StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+            if (sameName.Length > 1)
+                throw new AdapterOperationException("DISCONNECT_IDENTITY_BLOCKED");
+
+            if (reopened!.RunnerId is long persistedId)
+            {
+                var exact = sameName.SingleOrDefault(x => x.Id == persistedId);
+                if (exact is null || exact.Online || exact.Busy)
+                    throw new AdapterOperationException("DISCONNECT_IDENTITY_BLOCKED");
+                return persistedId;
+            }
+
+            if (sameName.Length == 1)
+            {
+                var exact = sameName[0];
+                if (exact.Id <= 0 || exact.Online || exact.Busy)
+                    throw new AdapterOperationException("DISCONNECT_IDENTITY_BLOCKED");
+                recoveryStore!.Write(exact.Id, PortableRunnerState.RemoteRemovalPending);
+                reopened = reopened with
+                {
+                    RunnerId = exact.Id,
+                    State = PortableRunnerState.RemoteRemovalPending,
+                    MayHaveUnownedProcess = false
+                };
+                return exact.Id;
+            }
+
+            if (attempt + 1 < maxPolls)
+                await recoveryDelay.WaitAsync(TimeSpan.FromSeconds(3), ct);
+        }
+
+        if (successfulLists == 0 && lastRemoteError is not null)
+            throw new AdapterOperationException("DISCONNECT_REMOTE_UNAVAILABLE");
+        throw new AdapterOperationException("DISCONNECT_IDENTITY_BLOCKED");
+    }
+
+    private void PreserveReopenPending()
+    {
+        try
+        {
+            if (lifecycle is null && recoveryStore is not null && reopened is not null)
+            {
+                recoveryStore.Write(reopened.RunnerId, PortableRunnerState.RemoteRemovalPending,
+                    reopened.MayHaveUnownedProcess);
+                reopened = reopened with { State = PortableRunnerState.RemoteRemovalPending };
+            }
+        }
+        catch
+        {
+            // Preserve the last durable evidence when storage cannot be updated.
         }
     }
 
