@@ -1,6 +1,6 @@
 # CURRENT — github-runner-local
 
-Updated: 2026-09-25. Phase: **C_REVIEW_READY + E_CORRECTION_REVIEW_READY**.
+Updated: 2026-09-25. Phase: **C_REVIEW_READY + E_RE3_CORRECTION_READY**.
 
 ## Authority
 
@@ -10,8 +10,8 @@ Updated: 2026-09-25. Phase: **C_REVIEW_READY + E_CORRECTION_REVIEW_READY**.
 - Owner authorization for E source/template: Issue #1 comment `5811700793`.
 - Opus plan: Issue #2 comment `5807784901`.
 - CT plan review: Issue #2 comment `5807941253`.
-- Current handoff: `docs/control-tower/handoffs/GRL-20260925-C-REVIEW-READY-E-CORRECTION-REVIEW-READY-V18.md`.
-- Required sentinel: `END_OF_GRL_HANDOFF key=GRL-20260925-C-REVIEW-READY-E-CORRECTION-REVIEW-READY-V18 sections=10`.
+- Current handoff: `docs/control-tower/handoffs/GRL-20260925-C-REVIEW-READY-E-RE3-CORRECTION-READY-V19.md`.
+- Required sentinel: `END_OF_GRL_HANDOFF key=GRL-20260925-C-REVIEW-READY-E-RE3-CORRECTION-READY-V19 sections=10`.
 
 ## Checkpoint C
 
@@ -33,57 +33,75 @@ C worker evidence:
 - Windows RunnerContractProbe PASS
 - runner v2.337.0 exact pin/hash verified
 
-No independent C review result has been published yet.
+No independent C review result is published yet.
 
-Fresh connector metadata currently reports PR #12 mergeable=true. This does not authorize merge; fresh-check again before any later merge action and require independent PASS first.
-
-## Checkpoint E corrected candidate
+## Checkpoint E current candidate
 
 Issue #11 / GRL-010.
 
 SAME DRAFT PR #13:
 - branch `feat/grl-e-execution-template`
-- old reviewed head `b23d37c4f0367d5311502d2cf80e31453a884d1d`
-- corrected exact head `855bd3342376ca7695a7d19d119d578986d09c2f`
+- current exact head `855bd3342376ca7695a7d19d119d578986d09c2f`
 - open / draft / unmerged
-- full PR remains exactly 33 template-only paths
-- fresh connector metadata currently reports mergeable=true
+- full PR remains 33 template-only paths
 
-Prior independent review:
+Original independent review:
 - result `5824543363`
-- release `5824545439`
 - disposition `NEEDS_E_CORRECTION`
-- blockers `R-E-1`, `R-E-2`, `R-E-3`
+- findings `R-E-1`, `R-E-2`, `R-E-3`
 
-Correction:
-- CT packet `5824981620`
-- worker claim `5825042626`
-- correction handoff `5825291040`
+First correction:
+- packet `5824981620`
+- corrected head `855bd3342376ca7695a7d19d119d578986d09c2f`
+- handoff `5825291040`
 - worker release `5825294298`
-- old→new delta exactly six authorized files
-
-Corrected-head worker-local proof:
-- Node v22.16.0
 - 106 passed / 0 failed / 0 skipped
-- real linter PASS
-- schema mirrors byte-for-byte PASS
-- PASS fixture 1 process / PASS
-- FAIL fixture 1 process / expected FAIL
-- E-B1 refusal 0 profile processes / BLOCKED
-- targeted R-E-1/R-E-2/R-E-3 regressions PASS
-- `git diff --check` PASS
 
-## E correction rereview
+Independent correction rereview:
+- result `5825400160`
+- release `5825402730`
+- disposition `NEEDS_E_CORRECTION_AGAIN`
+- `R-E-1` CLOSED
+- `R-E-2` CLOSED
+- `R-E-3` remains OPEN
 
-Independent rereview packet:
-Issue #11 comment `5825299636`.
+## Remaining R-E-3 defect
 
-Exact rereview target:
+The real linter still allows executable multi-repository credential/API behavior such as:
+
+```js
+const multiRepoToken = process.env.GRL_MULTI_REPO_TOKEN;
+await fetch("https://api.github.com/repos/owner/other/contents/file", {
+  headers: { Authorization: "Bearer " + multiRepoToken }
+});
+```
+
+while returning lint PASS.
+
+The exact current source does not contain Stage-2 behavior; the blocker is the mandatory regression guard.
+
+## Second E correction packet
+
+Durable packet:
+Issue #11 comment `5825431498`.
+
+SAME branch / SAME PR #13.
+
+Current exact head before correction:
 `855bd3342376ca7695a7d19d119d578986d09c2f`.
 
-The rereviewer must be DIFFERENT from the correction worker and Control Tower, fresh-claim on Issue #1, independently verify all three original findings are closed, publish one exact-head disposition on Issue #11, release, and stop.
+Absolute write scope is exactly two files:
+- `templates/execution-repo/tools/lint.mjs`
+- `templates/execution-repo/tests/lint.test.mjs`
 
-Do not merge E before independent PASS.
+Everything else is frozen.
+
+Required outcome:
+- exact rereviewer multiRepoToken / `GRL_MULTI_REPO_TOKEN` + authenticated other-repository API mutation fails with `STAGE2_CREDENTIAL`;
+- representative cross-repo/PAT credential forms fail;
+- legitimate current-repository Stage-1 GitHubApi remains lint PASS;
+- all prior R-E-3 negative mutations remain failing;
+- full Node/linter/schema/PASS/FAIL/E-B1 proof stays green.
 
 ## Activation boundaries
 
@@ -92,7 +110,7 @@ Still forbidden:
 - live template activation;
 - GitHub Actions dispatch/rerun;
 - runner registration/start;
-- Stage-2 credentials;
+- Stage-2 implementation/credentials;
 - GitHub App creation/live login unless separately authorized;
 - D/G1/service/UAC/release work.
 
@@ -106,8 +124,9 @@ D15 license/signing: OPEN.
 
 ## Next
 
-Primary next action: one DIFFERENT independent E correction rereviewer follows Issue #11 packet `5825299636` against exact head `855bd3342376ca7695a7d19d119d578986d09c2f`.
+Primary E action: one bounded implementation worker claims and applies Issue #11 packet `5825431498` on SAME branch/PR #13, touching exactly the two authorized linter files, runs full proof, publishes correction handoff, releases, and stops.
 
-In parallel, a separate independent reviewer follows Issue #10 packet `5825315282` against exact C PR #12 head `67dd220771bf67f65348e622998e005bf30b26bc`.
+In parallel, a separate independent reviewer may still take C packet `5825315282`.
 
-After either result, Primary Control Tower fresh-checks refs/claims and records the exact disposition. Merge nothing without independent PASS.
+After the E correction, a DIFFERENT independent reviewer rereviews the exact new E head. Merge nothing without PASS.
+
