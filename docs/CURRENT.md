@@ -23,6 +23,7 @@ DRAFT PR #12:
 - open / draft / unmerged
 - implementation handoff `5813138169`
 - worker release `5813145195`
+- independent review packet `5825315282`
 
 C worker evidence:
 - Core 192/192
@@ -107,6 +108,6 @@ D15 license/signing: OPEN.
 
 Primary next action: one DIFFERENT independent E correction rereviewer follows Issue #11 packet `5825299636` against exact head `855bd3342376ca7695a7d19d119d578986d09c2f`.
 
-In parallel, a separate independent reviewer may review exact C PR #12 head `67dd220771bf67f65348e622998e005bf30b26bc`.
+In parallel, a separate independent reviewer follows Issue #10 packet `5825315282` against exact C PR #12 head `67dd220771bf67f65348e622998e005bf30b26bc`.
 
 After either result, Primary Control Tower fresh-checks refs/claims and records the exact disposition. Merge nothing without independent PASS.
