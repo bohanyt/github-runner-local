@@ -759,8 +759,10 @@ public sealed class PortableLifecycleTests
         {
             Commands.Add(command);
             Operations.Add(command.Arguments[0]);
-            if (ConfigureException is not null) throw ConfigureException;
-            if (FailConfigure) throw new RunnerProcessException(RunnerProcessFailure.CommandFailed, "Configuration failed.");
+            var isConfigure = command.Arguments.FirstOrDefault() == "--unattended";
+            if (isConfigure && ConfigureException is not null) throw ConfigureException;
+            if (isConfigure && FailConfigure)
+                throw new RunnerProcessException(RunnerProcessFailure.CommandFailed, "Configuration failed.");
             return Task.CompletedTask;
         }
         public Task<IRunnerCli> VerifyCliAsync(CancellationToken ct)
