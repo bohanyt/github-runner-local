@@ -468,6 +468,31 @@ public sealed class PortableLifecycleTests
     }
 
     [Fact]
+    public async Task PostConfigureTransientFailureCanRecoverByExplicitReresolution()
+    {
+        var admin = new FakeAdmin
+        {
+            Lists = Pages([], [Runner(42, false)], [Runner(42, false)], [])
+        };
+        admin.FailListCalls.Add(2);
+        var process = new FakeProcess();
+        using var lifecycle = NewLifecycle(admin, process);
+
+        var initial = await Assert.ThrowsAsync<PortableRunnerException>(() =>
+            lifecycle.RegisterAndStartAsync(1, TimeSpan.Zero, default));
+        Assert.Equal(PortableRunnerFailure.RemoteUnavailable, initial.Failure);
+        Assert.Null(lifecycle.RunnerId);
+        Assert.Equal(PortableRunnerState.RemoteRemovalPending, lifecycle.State);
+        Assert.Equal(0, process.StartCount);
+
+        await lifecycle.UnregisterAsync(1, TimeSpan.Zero, default);
+
+        Assert.Equal(42, lifecycle.RunnerId);
+        Assert.Equal(PortableRunnerState.Removed, lifecycle.State);
+        Assert.Equal(1, admin.RemoveTokenRequests);
+    }
+
+    [Fact]
     public async Task ConfigureFailureWithUnknownIdCanReresolveAndRecover()
     {
         var admin = new FakeAdmin { Lists = Pages([], [], [Runner(42, false)], [Runner(42, false)], []) };
@@ -583,6 +608,7 @@ public sealed class PortableLifecycleTests
         var result = await adapter.RemoveAsync();
 
         Assert.Equal(WizardEvent.RemoteRemoved, result);
+        Assert.Equal(2, admin.ListCalls); // one identity/state recheck, then post-delete absence verification
         Assert.Equal(1, admin.DeleteStaleRequests);
         Assert.Equal(PortableRunnerState.Removed, store.Read()!.State);
     }
@@ -605,6 +631,32 @@ public sealed class PortableLifecycleTests
         Assert.Equal(1, admin.DeleteStaleRequests);
         Assert.Equal(55, store.Read()!.RunnerId);
         Assert.Equal(PortableRunnerState.Removed, store.Read()!.State);
+    }
+
+    [Fact]
+    public async Task ReopenedDeleteFailureKeepsPersistedIdPending()
+    {
+        using var root = new FakeRoot();
+        using var store = PortableRecoveryStore.Open(root.Path, "owner/exec", "runner-1");
+        store.Write(42, PortableRunnerState.Configured);
+        var evidence = Assert.IsType<PortableRecoveryEvidence>(store.Read());
+        var admin = new FakeAdmin
+        {
+            Lists = Pages([Runner(42, false)]),
+            DeleteException = new InvalidOperationException("remote delete unavailable")
+        };
+        using var adapter = new LiveWizardAdapters(
+            new LiveRuntimeOptions("clientidxx", "owner/exec", "runner-1", root.Path),
+            admin, store, evidence, new NoDelay());
+
+        var error = await Assert.ThrowsAsync<AdapterOperationException>(() => adapter.RemoveAsync());
+
+        Assert.Equal("DISCONNECT_REMOTE_UNAVAILABLE", error.ErrorCode);
+        var pending = Assert.IsType<PortableRecoveryEvidence>(store.Read());
+        Assert.Equal(42, pending.RunnerId);
+        Assert.Equal(PortableRunnerState.RemoteRemovalPending, pending.State);
+        Assert.False(pending.MayHaveUnownedProcess);
+        Assert.Equal(1, admin.DeleteStaleRequests);
     }
 
     [Fact]
@@ -715,6 +767,7 @@ public sealed class PortableLifecycleTests
         public int RegistrationTokenRequests { get; private set; }
         public int RemoveTokenRequests { get; private set; }
         public int DeleteStaleRequests { get; private set; }
+        public Exception? DeleteException { get; set; }
         public Task<IReadOnlyList<RepositoryRunner>> ListAsync(CancellationToken ct)
         {
             ct.ThrowIfCancellationRequested();
@@ -736,6 +789,7 @@ public sealed class PortableLifecycleTests
         public Task DeleteStaleAsync(long id, string confirmedName, CancellationToken ct)
         {
             DeleteStaleRequests++;
+            if (DeleteException is not null) throw DeleteException;
             return Task.CompletedTask;
         }
     }
