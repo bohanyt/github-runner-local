@@ -233,6 +233,7 @@ public sealed class WizardSession : INotifyPropertyChanged
         if (_live && action == WizardEvent.Resume)
         {
             try { await _adapters.RunnerController.ResumeAsync(); }
+            catch (AdapterOperationException error) { SetError(error.ErrorCode); return; }
             catch { SetError("RUNNER_DEGRADED"); return; }
         }
         if (!Apply(action)) return;
@@ -276,6 +277,11 @@ public sealed class WizardSession : INotifyPropertyChanged
                 ? "Exact remote runner removal verified. Local root remains for inspection."
                 : "Removal remains pending. No runner process was stopped or adopted.";
             NotifyAll();
+        }
+        catch (AdapterOperationException error)
+        {
+            _machine = new WizardStateMachine(_clock, WizardState.DisconnectRemotePending);
+            SetError(error.ErrorCode);
         }
         catch { SetError("DISCONNECT_REMOTE_UNAVAILABLE"); }
     }
@@ -392,7 +398,14 @@ public sealed class WizardSession : INotifyPropertyChanged
                 case WizardState.DisconnectPending:
                     await _delay.WaitAsync();
                     if (State != expected) return;
-                    result = new(await _adapters.Disconnect.RemoveAsync());
+                    try
+                    {
+                        result = new(await _adapters.Disconnect.RemoveAsync());
+                    }
+                    catch (AdapterOperationException error)
+                    {
+                        result = new AdapterResult(null, error.ErrorCode);
+                    }
                     break;
                 default:
                     return;
