@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Text;
 using Grl.Integration;
 using Grl.App.Presentation;
+using Grl.Core;
 
 namespace Grl.Integration.Tests;
 
@@ -614,32 +615,94 @@ public sealed class PortableLifecycleTests
     }
 
     [Fact]
-    public async Task ReopenedUnknownIdCanResolveUniqueOfflineRunnerBeforeDelete()
+    public async Task ReadyRecordRepeatedWizardRecoverNeverPromotesNameMatch()
     {
         using var root = new FakeRoot();
         using var store = PortableRecoveryStore.Open(root.Path, "owner/exec", "runner-1");
-        store.Write(null, PortableRunnerState.RemoteRemovalPending);
+        store.Write(null, PortableRunnerState.Ready);
         var evidence = Assert.IsType<PortableRecoveryEvidence>(store.Read());
-        var admin = new FakeAdmin { Lists = Pages([Runner(55, false)], []) };
+        var original = File.ReadAllBytes(Path.Combine(root.Path, ".grl-recovery.json"));
+        var admin = new FakeAdmin { Lists = Pages([Runner(55, false)]) };
+        using var adapter = new LiveWizardAdapters(
+            new LiveRuntimeOptions("clientidxx", "owner/exec", "runner-1", root.Path),
+            admin, store, evidence, new NoDelay());
+        var session = NewRecoverySession(adapter, root.Path);
+
+        await session.RecoverAsync();
+        await session.RecoverAsync();
+
+        Assert.Equal(WizardState.DisconnectRemotePending, session.State);
+        Assert.Equal("DISCONNECT_IDENTITY_BLOCKED", session.ActiveError?.Code);
+        Assert.Contains("Settings > Actions > Runners", session.ErrorNextStep);
+        Assert.Equal(evidence, store.Read());
+        Assert.Equal(original, File.ReadAllBytes(Path.Combine(root.Path, ".grl-recovery.json")));
+        Assert.Equal(0, admin.ListCalls);
+        Assert.Equal(0, admin.DeleteStaleRequests);
+        Assert.Equal(0, admin.RemoveTokenRequests);
+    }
+
+    [Theory]
+    [InlineData(PortableRunnerState.Configuring)] // persisted before config.cmd ExecuteAsync
+    [InlineData(PortableRunnerState.RemoteRemovalPending)]
+    public async Task ReopenedIdlessPreExecutionOrPendingRecordCannotDeleteByName(PortableRunnerState state)
+    {
+        using var root = new FakeRoot();
+        using var store = PortableRecoveryStore.Open(root.Path, "owner/exec", "runner-1");
+        store.Write(null, state);
+        var evidence = Assert.IsType<PortableRecoveryEvidence>(store.Read());
+        var original = File.ReadAllBytes(Path.Combine(root.Path, ".grl-recovery.json"));
+        var admin = new FakeAdmin { Lists = Pages([Runner(55, false)]) };
         using var adapter = new LiveWizardAdapters(
             new LiveRuntimeOptions("clientidxx", "owner/exec", "runner-1", root.Path),
             admin, store, evidence, new NoDelay());
 
-        var result = await adapter.RemoveAsync();
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            var error = await Assert.ThrowsAsync<AdapterOperationException>(() => adapter.RemoveAsync());
+            Assert.Equal("DISCONNECT_IDENTITY_BLOCKED", error.ErrorCode);
+        }
 
-        Assert.Equal(WizardEvent.RemoteRemoved, result);
-        Assert.Equal(1, admin.DeleteStaleRequests);
-        Assert.Equal(55, store.Read()!.RunnerId);
-        Assert.Equal(PortableRunnerState.Removed, store.Read()!.State);
+        Assert.Equal(evidence, store.Read());
+        Assert.Equal(original, File.ReadAllBytes(Path.Combine(root.Path, ".grl-recovery.json")));
+        Assert.Equal(0, admin.ListCalls);
+        Assert.Equal(0, admin.DeleteStaleRequests);
+        Assert.Equal(0, admin.RemoveTokenRequests);
     }
 
     [Fact]
-    public async Task ReopenedDeleteFailureKeepsPersistedIdPending()
+    public async Task ReopenedPersistedIdMismatchRefusesRepeatedRecoverWithoutMutation()
     {
         using var root = new FakeRoot();
         using var store = PortableRecoveryStore.Open(root.Path, "owner/exec", "runner-1");
         store.Write(42, PortableRunnerState.Configured);
         var evidence = Assert.IsType<PortableRecoveryEvidence>(store.Read());
+        var original = File.ReadAllBytes(Path.Combine(root.Path, ".grl-recovery.json"));
+        var admin = new FakeAdmin { Lists = Pages([Runner(55, false)], [Runner(55, false)]) };
+        using var adapter = new LiveWizardAdapters(
+            new LiveRuntimeOptions("clientidxx", "owner/exec", "runner-1", root.Path),
+            admin, store, evidence, new NoDelay());
+
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            var error = await Assert.ThrowsAsync<AdapterOperationException>(() => adapter.RemoveAsync());
+            Assert.Equal("DISCONNECT_IDENTITY_BLOCKED", error.ErrorCode);
+        }
+
+        Assert.Equal(evidence, store.Read());
+        Assert.Equal(original, File.ReadAllBytes(Path.Combine(root.Path, ".grl-recovery.json")));
+        Assert.Equal(2, admin.ListCalls);
+        Assert.Equal(0, admin.DeleteStaleRequests);
+        Assert.Equal(0, admin.RemoveTokenRequests);
+    }
+
+    [Fact]
+    public async Task ReopenedDeleteFailurePreservesPersistedIdAndOriginalState()
+    {
+        using var root = new FakeRoot();
+        using var store = PortableRecoveryStore.Open(root.Path, "owner/exec", "runner-1");
+        store.Write(42, PortableRunnerState.Configured);
+        var evidence = Assert.IsType<PortableRecoveryEvidence>(store.Read());
+        var original = File.ReadAllBytes(Path.Combine(root.Path, ".grl-recovery.json"));
         var admin = new FakeAdmin
         {
             Lists = Pages([Runner(42, false)]),
@@ -653,8 +716,10 @@ public sealed class PortableLifecycleTests
 
         Assert.Equal("DISCONNECT_REMOTE_UNAVAILABLE", error.ErrorCode);
         var pending = Assert.IsType<PortableRecoveryEvidence>(store.Read());
+        Assert.Equal(evidence, pending);
+        Assert.Equal(original, File.ReadAllBytes(Path.Combine(root.Path, ".grl-recovery.json")));
         Assert.Equal(42, pending.RunnerId);
-        Assert.Equal(PortableRunnerState.RemoteRemovalPending, pending.State);
+        Assert.Equal(PortableRunnerState.Configured, pending.State);
         Assert.False(pending.MayHaveUnownedProcess);
         Assert.Equal(1, admin.DeleteStaleRequests);
     }
@@ -664,18 +729,24 @@ public sealed class PortableLifecycleTests
     {
         using var root = new FakeRoot();
         using var store = PortableRecoveryStore.Open(root.Path, "owner/exec", "runner-1");
-        store.Write(null, PortableRunnerState.Degraded, mayHaveUnownedProcess: true);
+        store.Write(42, PortableRunnerState.Degraded, mayHaveUnownedProcess: true);
         var evidence = Assert.IsType<PortableRecoveryEvidence>(store.Read());
+        var original = File.ReadAllBytes(Path.Combine(root.Path, ".grl-recovery.json"));
         var admin = new FakeAdmin();
         using var adapter = new LiveWizardAdapters(
             new LiveRuntimeOptions("clientidxx", "owner/exec", "runner-1", root.Path),
             admin, store, evidence, new NoDelay());
 
-        var error = await Assert.ThrowsAsync<AdapterOperationException>(() => adapter.RemoveAsync());
-
-        Assert.Equal("DISCONNECT_PROCESS_UNCERTAIN", error.ErrorCode);
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            var error = await Assert.ThrowsAsync<AdapterOperationException>(() => adapter.RemoveAsync());
+            Assert.Equal("DISCONNECT_PROCESS_UNCERTAIN", error.ErrorCode);
+        }
+        Assert.Equal(evidence, store.Read());
+        Assert.Equal(original, File.ReadAllBytes(Path.Combine(root.Path, ".grl-recovery.json")));
         Assert.Equal(0, admin.ListCalls);
         Assert.Equal(0, admin.DeleteStaleRequests);
+        Assert.Equal(0, admin.RemoveTokenRequests);
     }
 
     [Fact]
@@ -715,6 +786,17 @@ public sealed class PortableLifecycleTests
 
     private static PortableRunnerLifecycle NewLifecycle(FakeAdmin admin, FakeProcess process) =>
         new(admin, Cli, process, "runner-1", "grl-exec", new NoDelay(), isElevated: () => false);
+
+    private static WizardSession NewRecoverySession(LiveWizardAdapters adapter, string root) =>
+        new(new ScenarioSelection(FakeScenario.HappyPath, string.Empty), new TestClock(),
+            new PreviewDelay(TimeSpan.Zero),
+            new WizardAdapters(adapter, adapter, adapter, adapter, adapter, adapter, adapter),
+            WizardState.DisconnectRemotePending, live: true, liveLocation: root);
+
+    private sealed class TestClock : IClock
+    {
+        public DateTimeOffset UtcNow => new(2026, 9, 25, 0, 0, 0, TimeSpan.Zero);
+    }
 
     private static Queue<IReadOnlyList<RepositoryRunner>> Pages(params IReadOnlyList<RepositoryRunner>[] pages) => new(pages);
 

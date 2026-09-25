@@ -318,6 +318,10 @@ internal sealed class LiveWizardAdapters : IPreflightAdapter, IDeviceSignInAdapt
                 throw new AdapterOperationException("DISCONNECT_PROCESS_UNCERTAIN");
             if (reopened.State is PortableRunnerState.Ready or PortableRunnerState.Removed)
                 throw new AdapterOperationException("DISCONNECT_IDENTITY_BLOCKED");
+            // A name seen after reopening cannot prove that this installation registered it.
+            // Only a numeric ID bound by the earlier session permits remote cleanup.
+            if (reopened.RunnerId is not > 0)
+                throw new AdapterOperationException("DISCONNECT_IDENTITY_BLOCKED");
 
             var admin = recoveryAdminOverride ??
                 new GitHubRunnerAdministration(apiHttp, access!, selected);
@@ -339,7 +343,6 @@ internal sealed class LiveWizardAdapters : IPreflightAdapter, IDeviceSignInAdapt
         }
         catch (AdapterOperationException)
         {
-            PreserveReopenPending();
             throw;
         }
         catch (PortableRunnerException error) when (error.Failure ==
@@ -349,22 +352,18 @@ internal sealed class LiveWizardAdapters : IPreflightAdapter, IDeviceSignInAdapt
         }
         catch (PortableRunnerException error) when (error.Failure == PortableRunnerFailure.IdentityUncertain)
         {
-            PreserveReopenPending();
             throw new AdapterOperationException("DISCONNECT_IDENTITY_BLOCKED");
         }
         catch (PortableRunnerException error) when (error.Failure == PortableRunnerFailure.RemoteUnavailable)
         {
-            PreserveReopenPending();
             throw new AdapterOperationException("DISCONNECT_REMOTE_UNAVAILABLE");
         }
         catch (RunnerAdminException error) when (error.Failure == RunnerAdminFailure.IdentityChanged)
         {
-            PreserveReopenPending();
             throw new AdapterOperationException("DISCONNECT_IDENTITY_BLOCKED");
         }
         catch
         {
-            PreserveReopenPending();
             throw new AdapterOperationException("DISCONNECT_REMOTE_UNAVAILABLE");
         }
     }
@@ -402,53 +401,16 @@ internal sealed class LiveWizardAdapters : IPreflightAdapter, IDeviceSignInAdapt
             if (sameName.Length > 1)
                 throw new AdapterOperationException("DISCONNECT_IDENTITY_BLOCKED");
 
-            if (reopened!.RunnerId is long persistedId)
-            {
-                var exact = sameName.SingleOrDefault(x => x.Id == persistedId);
-                if (exact is null || exact.Online || exact.Busy)
-                    throw new AdapterOperationException("DISCONNECT_IDENTITY_BLOCKED");
-                return persistedId;
-            }
-
-            if (sameName.Length == 1)
-            {
-                var exact = sameName[0];
-                if (exact.Id <= 0 || exact.Online || exact.Busy)
-                    throw new AdapterOperationException("DISCONNECT_IDENTITY_BLOCKED");
-                recoveryStore!.Write(exact.Id, PortableRunnerState.RemoteRemovalPending);
-                reopened = reopened with
-                {
-                    RunnerId = exact.Id,
-                    State = PortableRunnerState.RemoteRemovalPending,
-                    MayHaveUnownedProcess = false
-                };
-                return exact.Id;
-            }
-
-            if (attempt + 1 < maxPolls)
-                await recoveryDelay.WaitAsync(TimeSpan.FromSeconds(3), ct);
+            var persistedId = reopened!.RunnerId!.Value;
+            var exact = sameName.SingleOrDefault(x => x.Id == persistedId);
+            if (exact is null || exact.Online || exact.Busy)
+                throw new AdapterOperationException("DISCONNECT_IDENTITY_BLOCKED");
+            return persistedId;
         }
 
         if (successfulLists == 0 && lastRemoteError is not null)
             throw new AdapterOperationException("DISCONNECT_REMOTE_UNAVAILABLE");
         throw new AdapterOperationException("DISCONNECT_IDENTITY_BLOCKED");
-    }
-
-    private void PreserveReopenPending()
-    {
-        try
-        {
-            if (lifecycle is null && recoveryStore is not null && reopened is not null)
-            {
-                recoveryStore.Write(reopened.RunnerId, PortableRunnerState.RemoteRemovalPending,
-                    reopened.MayHaveUnownedProcess);
-                reopened = reopened with { State = PortableRunnerState.RemoteRemovalPending };
-            }
-        }
-        catch
-        {
-            // Preserve the last durable evidence when storage cannot be updated.
-        }
     }
 
     private static bool SafeRoot(string root)

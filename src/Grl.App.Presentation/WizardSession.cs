@@ -113,7 +113,7 @@ public sealed class WizardSession : INotifyPropertyChanged
         : State == WizardState.DisconnectDone
             ? "Exact remote removal was verified in this session. The local root remains for inspection."
         : HasPendingRecovery
-            ? "No runner process is owned by this window. Registration or a process from an earlier app session may remain; recovery checks the exact remote identity."
+            ? "No runner process is owned by this window. Registration or a process from an earlier app session may remain. Recovery requires a stored numeric runner ID; otherwise inspect repository Settings > Actions > Runners manually."
             : "Safe Pause is unavailable. Closing or crashing the app does not guarantee that a runner process stops.";
     public bool ShowAccountConfirmation => _live && State == WizardState.SignInSignedIn;
     public bool ShowTargetConfirmation => _live && State == WizardState.ScopeSelected;
