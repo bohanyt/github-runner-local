@@ -34,7 +34,8 @@ DRAFT PR #12:
 - exact candidate head `67dd220771bf67f65348e622998e005bf30b26bc`;
 - open / draft / unmerged;
 - implementation handoff `5813138169`;
-- worker release `5813145195`.
+- worker release `5813145195`;
+- independent review packet `5825315282`.
 
 Evidence remains:
 - Core 192/192;
@@ -153,7 +154,7 @@ Primary next action:
 - one DIFFERENT independent reviewer takes the E correction rereview packet `5825299636` and reviews exact head `855bd3342376ca7695a7d19d119d578986d09c2f`.
 
 In parallel:
-- one independent C reviewer may review exact C head `67dd220771bf67f65348e622998e005bf30b26bc`.
+- one independent C reviewer follows Issue #10 packet `5825315282` against exact C head `67dd220771bf67f65348e622998e005bf30b26bc`.
 
 After either review result, Control Tower fresh-checks claims/refs, records the exact disposition, and updates continuity. Merge nothing without independent PASS.
 
