@@ -4,6 +4,24 @@ import { validateCanonicalResult } from './reporting.mjs';
 
 export { parseMarkedComment };
 
+const RECONCILE_MARKER = '<!-- grl-reconcile v1 -->';
+
+function trustedReconcileNote(comment, ack) {
+  if (comment?.user?.login !== 'github-actions[bot]') return false;
+  const note = parseMarkedComment(comment.body, RECONCILE_MARKER);
+  if (!note) return false;
+  try {
+    exactKeys(note, ['schema_version', 'request_id', 'run_id', 'run_attempt', 'outcome']);
+  } catch {
+    return false;
+  }
+  return note.schema_version === 'grl.reconcile.v1' &&
+    note.request_id === ack.request_id &&
+    note.run_id === ack.run.id &&
+    note.run_attempt === ack.run.attempt &&
+    ['INTERRUPTED', 'REPORTING_INCOMPLETE'].includes(note.outcome);
+}
+
 export function ackFor(identity, admitted, reasonCode) {
   return {
     schema_version: 'grl.ack.v1',
@@ -209,14 +227,10 @@ export async function reconcileRecent({ api, mailboxIssue, since, limit = 20 }) 
     const status = await api.getCommitStatus(ack.target.requested_sha, `grl/${ack.profile.id}`);
     const state = observeTerminal({ ack, run, comments, status, refusalExpected });
     if (state.outcome === 'ACTIVE' || state.reportingComplete) continue;
-    if (comments.some(x => {
-      const note = parseMarkedComment(x.body, '<!-- grl-reconcile v1 -->');
-      return note?.request_id === ack.request_id && note?.run_id === ack.run.id &&
-        note?.run_attempt === ack.run.attempt;
-    })) continue;
+    if (comments.some(comment => trustedReconcileNote(comment, ack))) continue;
     const note = { schema_version: 'grl.reconcile.v1', request_id: ack.request_id,
       run_id: ack.run.id, run_attempt: ack.run.attempt, outcome: state.outcome };
-    await api.postIssueComment(mailboxIssue, fenced('<!-- grl-reconcile v1 -->', note, 2048));
+    await api.postIssueComment(mailboxIssue, fenced(RECONCILE_MARKER, note, 2048));
     notes.push(note);
   }
   return notes;
