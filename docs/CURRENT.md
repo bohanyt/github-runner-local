@@ -1,44 +1,48 @@
 # CURRENT — github-runner-local
 
-Updated: 2026-09-25. Phase: **D_INDEPENDENT_REVIEW_READY; OFFICE_G1_GATED**.
+Updated: 2026-09-25. Phase: **D_CORRECTION_READY; OFFICE_G1_GATED**.
 
 ## Authority
 
 - Canonical branch: `main`.
-- Control Tower: Issue #1; owner-designated successor CT.
-- Current handoff: `docs/control-tower/handoffs/GRL-20260925-D-INDEPENDENT-REVIEW-READY-G1-GATED-V28.md`.
-- Required sentinel: `END_OF_GRL_HANDOFF key=GRL-20260925-D-INDEPENDENT-REVIEW-READY-G1-GATED-V28 sections=8`.
+- Control Tower: Issue #1, owner-designated successor CT.
+- Current handoff: `docs/control-tower/handoffs/GRL-20260925-D-CORRECTION-RD1-RD2-G1-GATED-V29.md`.
+- Required sentinel: `END_OF_GRL_HANDOFF key=GRL-20260925-D-CORRECTION-RD1-RD2-G1-GATED-V29 sections=8`.
 
-## Merged source
+## Source state
 
-Checkpoint C and E are independently review-clean and merged:
+C and E are independently review-clean and merged:
 - C merge `451d3ab889f9f63f45ebf90ba54ddece7b60e6eb`.
 - E merge `a296f3f9dfa362f6a53d20ff81a46eef7a519819`.
 
-Checkpoint D is NOT merged.
+D source is **NOT merged**. DRAFT PR #17 is on branch `feat/grl-d-portable-lifecycle` at independently reviewed head `b14ff5fa108a4a1891efbc03f700bbffaaa3cfcf`. Its source base at publication was `be6a34872db8c059de060fafbb4188a0e39e1ce1`; later main authority-doc advancement is expected.
 
-## Active task: independent D source review
+## Independent D result
 
-Issue #16 / GRL-013 implementation worker published DRAFT PR #17 on branch `feat/grl-d-portable-lifecycle`, exact head `b14ff5fa108a4a1891efbc03f700bbffaaa3cfcf`. Its source base at publication was `be6a34872db8c059de060fafbb4188a0e39e1ce1`; continuity-only main advancement is expected.
+Issue #16 review comment `5828083061`: **NEEDS_D_CORRECTION**, 2 blocking findings at that exact head:
+- R-D-1: Drain/unregister may kill a job assigned after an absent/idle status snapshot.
+- R-D-2: Partial configure failure can strand the live wizard without cleanup.
 
-- Worker handoff: Issue #16 comment `5827081178`.
-- Worker claim release: Issue #1 comment `5827088164`.
-- Independent review packet: Issue #16 comment `5827801807`.
-- Base-SHA clarification: Issue #16 comment `5827814992`.
-- Worker evidence: `LOCAL_CHECKED`, 352/352 in each of two full test runs, 0 failed/skipped, Windows read-only probes PASS. No live acceptance.
+Reviewer release: Issue #1 comment `5828088332`.
 
-ONE different independent reviewer claims and assesses the entire exact-head PR, especially the drain/job-assignment race. Reviewer publishes one Issue #16 result, releases, and stops. CT coordinates corrections or a separate merge gate.
+Independent Windows build and two test runs passed 352/352 each; deterministic harness reproduced both defects. Separate runner probe download stalled; independently hash-verified production installer and read-only CLI adapter witness passed. Evidence remains `LOCAL_CHECKED`, not real G1/`WINDOWS_TESTED`.
+
+## Active task: bounded correction
+
+Issue #16 CT correction packet `5828348757` governs ONE worker on the SAME branch and SAME DRAFT PR #17, starting from `b14ff5fa108a4a1891efbc03f700bbffaaa3cfcf`. Fix only R-D-1/R-D-2 within Issue #16's source/test allowlist, run proof, push normal fast-forward, publish handoff, release and stop. No self-review or merge.
+
+If safe cooperative Drain cannot be established within the reviewed runner contract, worker reports `D_CORRECTION_BLOCKED_RD1` to CT instead of declaring success. A different reviewer must rereview any corrected exact head.
 
 ## Owner-approved live topology
 
-OD-1/D09: dedicated private execution repo `bohanyt/github-runner-local-exec`.
-OD-2/D10: owner-only Device Flow App, runtime Client ID on Issue #14, installation settings owner-attested.
-OD-7/D29: current office Windows laptop approved for first portable unelevated runner `grl-office`.
-D30: personal runner `grl-personal` only after G1 PASS; exactly ONE active `grl-exec` runner at a time, with separate registration and credentials.
+- OD-1/D09: dedicated private repo `bohanyt/github-runner-local-exec`.
+- OD-2/D10: owner-only Device Flow App for acceptance; Client ID on Issue #14; installation settings owner-attested.
+- OD-7/D29: current office Windows laptop approved for first portable unelevated trusted-code-only `grl-office`.
+- D30: `grl-personal` only after G1 PASS, separate credentials and one active matching `grl-exec` runner at a time.
 
-## Gated live office G1
+## Gated live task
 
-Issue #15 / GRL-012 remains **GATED** until D independent PASS, any corrections and a separate CT/owner merge. Then CT fresh-reads main and dispatches the real office-laptop witness. A source build or review does not prove real Device Flow, runner online, fixture execution or `WINDOWS_TESTED`.
+Issue #15 office G1 remains GATED until D correction, independent exact-head PASS and separate CT/owner merge. No source test or read-only probe substitutes for real Device Flow, runner online and harmless same-repo workflow witness.
 
 ## Standing boundaries
 
@@ -46,4 +50,4 @@ No GitHub-hosted Actions; Stage-2/cross-repo credentials or workload; public App
 
 ## Next
 
-Dispatch ONE different independent reviewer for PR #17 using Issue #16 packet `5827801807` and clarification `5827814992`. No self-review, source edits, merge or Issue #15 execution.
+Dispatch one bounded D correction worker from Issue #16 packet `5828348757`. CT handles a blocked design question or subsequent independent rereview.
