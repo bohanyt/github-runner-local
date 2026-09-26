@@ -1,13 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { lintSource } from '../../templates/execution-repo/tools/lint.mjs';
 import {
-  BASELINE_WORKFLOW_BLOB, WORKFLOW_PATH, applyOverlay, gitBlobSha, main,
+  BASELINE_WORKFLOW_BLOB, CANONICAL_REMOTE_URLS, WORKFLOW_PATH, applyOverlay, gitBlobSha, main,
   overlayDelta, restoreOverlay, validateParameters
 } from './overlay.mjs';
 
@@ -112,9 +112,15 @@ test('restore returns the exact reviewed bytes and refuses anything else', () =>
   assert.equal(refusal(() => restoreOverlay(baseline, params, baseline)), 'NOT_EXPECTED_OVERLAY');
 });
 
-// End-to-end CLI round trip in a disposable Git repository shaped like the private repo.
-function fixtureRepo() {
-  const dir = mkdtempSync(join(tmpdir(), 'grl-g1-witness-'));
+
+// ---- Disposable private-repo shaped clone with a local bare "origin" ----
+// allowedUrls is the in-process test seam; the CLI itself only accepts the canonical remote.
+function fixture() {
+  const base = mkdtempSync(join(tmpdir(), 'grl-g1-witness-'));
+  const bare = join(base, 'remote.git').replaceAll('\\', '/');
+  const dir = join(base, 'work');
+  git(base, ['init', '-q', '--bare', '-b', 'main', bare]);
+  mkdirSync(dir);
   const run = args => git(dir, args);
   run(['init', '-q', '-b', 'main']);
   run(['config', 'core.autocrlf', 'false']);
@@ -124,63 +130,341 @@ function fixtureRepo() {
   run(['add', '-A']); run(['commit', '-q', '-m', 'initial']);
   mkdirSync(join(dir, '.github/workflows'), { recursive: true });
   writeFileSync(join(dir, WORKFLOW_PATH), baseline);
-  run(['add', '-A']); run(['commit', '-q', '-m', 'bootstrap']);
+  run(['add', '-A']); run(['commit', '-q', '-m', 'bootstrap X']);
   const observed = run(['rev-parse', 'HEAD']);
   run(['commit', '-q', '--allow-empty', '-m', 'witness requested anchor']);
   const requested = run(['rev-parse', 'HEAD']);
-  return { dir, run, parameters: { requestedSha: requested, observedSha: observed, requestId: U } };
+  run(['remote', 'add', 'origin', bare]);
+  run(['push', '-q', 'origin', 'main']);
+  const parameters = { requestedSha: requested, observedSha: observed, requestId: U };
+  const opts = { allowedUrls: [bare] };
+  const cli = (command, p = parameters) => main([command, dir, '--requested', p.requestedSha,
+    '--observed', p.observedSha, '--request-id', p.requestId], opts);
+  const remote = () => git(base, ['--git-dir', bare, 'rev-parse', 'refs/heads/main']);
+  const remoteWorkflow = () => git(base, ['--git-dir', bare, 'rev-parse', `refs/heads/main:${WORKFLOW_PATH}`]);
+  const P = run(['rev-parse', 'HEAD']);
+  const overlay = applyOverlay(baseline, parameters);
+  const overlayBlob = gitBlobSha(overlay);
+  const commits = () => Number(run(['rev-list', '--count', 'HEAD']));
+  const cleanup = () => rmSync(base, { recursive: true, force: true });
+  return { base, bare, dir, run, parameters, opts, cli, remote, remoteWorkflow, P, overlay,
+    overlayBlob, commits, cleanup };
 }
-const cli = (command, dir, p) => main([command, dir, '--requested', p.requestedSha,
-  '--observed', p.observedSha, '--request-id', p.requestId]);
+const workflowBytes = fx => readFileSync(join(fx.dir, WORKFLOW_PATH));
+const rejectPush = fx => writeFileSync(join(fx.bare, 'hooks', 'pre-receive'), '#!/bin/sh\nexit 1\n');
+const allowPush = fx => rmSync(join(fx.bare, 'hooks', 'pre-receive'), { force: true });
 
-test('CLI plan/apply/verify/restore round-trips to the exact normal workflow', () => {
-  const { dir, run, parameters } = fixtureRepo();
-  try {
-    const pre = run(['rev-parse', 'HEAD']);
-    const plan = cli('plan', dir, parameters);
-    assert.equal(plan.preOverlayCommit, pre);
-    assert.equal(plan.expectedRefusal.reason_code, 'CHECKOUT_SHA_MISMATCH');
-    assert.equal(run(['status', '--porcelain']), '', 'plan writes nothing');
-    const applied = cli('apply', dir, parameters);
-    assert.equal(applied.overlayBlob, plan.overlayBlob);
-    assert.equal(run(['diff', '--name-only']), WORKFLOW_PATH);
-    run(['commit', '-q', '-am', 'TEMPORARY G1 witness overlay']);
-    assert.equal(run(['rev-parse', `HEAD:${WORKFLOW_PATH}`]), plan.overlayBlob);
-    assert.equal(cli('verify-overlay', dir, parameters).overlayBlob, plan.overlayBlob);
-    assert.equal(refusal(() => main(['verify-normal', dir])), 'OVERRIDE_PRESENT');
-    cli('restore', dir, parameters);
-    run(['commit', '-q', '-am', 'Restore reviewed G1 workflow']);
-    assert.equal(run(['rev-parse', `HEAD:${WORKFLOW_PATH}`]), BASELINE_WORKFLOW_BLOB);
-    assert.equal(run(['diff', pre, 'HEAD']), '', 'tree identical to pre-overlay commit');
-    assert.equal(main(['verify-normal', dir]).workflowBlob, BASELINE_WORKFLOW_BLOB);
-  } finally { rmSync(dir, { recursive: true, force: true }); }
+test('canonical destination is exactly the private execution repository', () => {
+  assert.deepEqual([...CANONICAL_REMOTE_URLS], [
+    'https://github.com/bohanyt/github-runner-local-exec.git',
+    'https://github.com/bohanyt/github-runner-local-exec']);
 });
 
-test('CLI refuses dirty trees, foreign or non-commit SHAs and drifted HEAD', () => {
-  const { dir, run, parameters } = fixtureRepo();
+test('happy path: plan, apply, verify-overlay, restore and verify-normal against the actual remote', () => {
+  const fx = fixture();
   try {
-    writeFileSync(join(dir, 'stray.txt'), 'x');
-    assert.equal(refusal(() => cli('apply', dir, parameters)), 'DIRTY_TREE');
-    rmSync(join(dir, 'stray.txt'));
-    assert.equal(refusal(() => cli('plan', dir, { ...parameters, observedSha: 'e'.repeat(40) })),
+    const planned = fx.cli('plan');
+    assert.equal(planned.plan.P, fx.P);
+    assert.equal(planned.plan.overlayBlob, fx.overlayBlob);
+    assert.equal(fx.run(['status', '--porcelain']), '', 'plan leaves the tree untouched');
+    assert.equal(fx.cli('plan').reused, true, 'plan is idempotent');
+    const applied = fx.cli('apply');
+    assert.equal(applied.state, 'OVERLAY_ACTIVE_CONFIRMED');
+    assert.equal(fx.remote(), applied.Y);
+    assert.equal(fx.remoteWorkflow(), fx.overlayBlob);
+    assert.deepEqual(fx.run(['diff', '--name-only', fx.P, applied.Y]).split('\n'), [WORKFLOW_PATH]);
+    assert.equal(fx.cli('verify-overlay').state, 'OVERLAY_ACTIVE_CONFIRMED');
+    assert.equal(fx.cli('apply').pushed, false, 'apply re-run is a no-op');
+    assert.equal(refusal(() => fx.cli('verify-normal')), 'LOCAL_NOT_NORMAL');
+    const restored = fx.cli('restore');
+    assert.equal(restored.state, 'NORMAL_CONFIRMED');
+    assert.equal(restored.remoteSha, fx.remote());
+    assert.equal(fx.remoteWorkflow(), BASELINE_WORKFLOW_BLOB);
+    assert.equal(fx.run(['diff', fx.P, 'HEAD']), '', 'tree identical to P');
+    const count = fx.commits();
+    assert.equal(fx.cli('restore').state, 'NORMAL_CONFIRMED');
+    assert.equal(fx.commits(), count, 'restore re-run creates no commit');
+    assert.equal(fx.cli('verify-normal').state, 'NORMAL_CONFIRMED');
+    assert.equal(refusal(() => fx.cli('apply')), 'ALREADY_RESTORED');
+    assert.ok(workflowBytes(fx).equals(baseline));
+  } finally { fx.cleanup(); }
+});
+
+test('W-1 point A: interrupted apply (overlay written, unstaged or staged) resumes or cancels', () => {
+  for (const staged of [false, true]) {
+    // Resume forward with apply.
+    let fx = fixture();
+    try {
+      fx.cli('plan');
+      writeFileSync(join(fx.dir, WORKFLOW_PATH), fx.overlay);
+      if (staged) fx.run(['add', '--', WORKFLOW_PATH]);
+      assert.equal(refusal(() => fx.cli('verify-normal')), 'LOCAL_NOT_NORMAL', 'dirty overlay is not normal');
+      const applied = fx.cli('apply');
+      assert.equal(fx.remote(), applied.Y);
+      assert.equal(fx.commits(), 4);
+    } finally { fx.cleanup(); }
+    // Or cancel locally: nothing was committed or pushed, so no restore commit is invented.
+    fx = fixture();
+    try {
+      fx.cli('plan');
+      writeFileSync(join(fx.dir, WORKFLOW_PATH), fx.overlay);
+      if (staged) fx.run(['add', '--', WORKFLOW_PATH]);
+      const cancelled = fx.cli('restore');
+      assert.equal(cancelled.state, 'NORMAL_CONFIRMED');
+      assert.equal(cancelled.reason, 'CANCELLED_BEFORE_COMMIT');
+      assert.equal(fx.run(['rev-parse', 'HEAD']), fx.P);
+      assert.equal(fx.remote(), fx.P);
+      assert.equal(fx.run(['status', '--porcelain']), '');
+      assert.equal(fx.cli('restore').reason, 'CANCELLED_BEFORE_COMMIT', 'repeatable');
+    } finally { fx.cleanup(); }
+  }
+});
+
+test('W-1 point B: interrupted restore (baseline written, unstaged or staged) converges to one restore commit', () => {
+  for (const staged of [false, true]) {
+    const fx = fixture();
+    try {
+      fx.cli('plan'); const { Y } = fx.cli('apply');
+      writeFileSync(join(fx.dir, WORKFLOW_PATH), baseline);
+      if (staged) fx.run(['add', '--', WORKFLOW_PATH]);
+      assert.equal(refusal(() => fx.cli('verify-normal')), 'LOCAL_NOT_NORMAL', 'HEAD still overlay');
+      assert.equal(refusal(() => fx.cli('apply')), 'RESTORE_IN_PROGRESS');
+      const restored = fx.cli('restore');
+      assert.equal(restored.state, 'NORMAL_CONFIRMED');
+      assert.deepEqual(fx.run(['rev-list', '--parents', '-n', '1', 'HEAD']).split(' ').slice(1), [Y]);
+      assert.equal(fx.commits(), 5);
+      fx.cli('restore');
+      assert.equal(fx.commits(), 5, 'no duplicate restore commit');
+    } finally { fx.cleanup(); }
+  }
+});
+
+test('overlay committed but not pushed: apply publishes it, or restore publishes Y+Z with no active override', () => {
+  for (const next of ['apply', 'restore']) {
+    const fx = fixture();
+    try {
+      fx.cli('plan');
+      rejectPush(fx);
+      assert.equal(refusal(() => fx.cli('apply')), 'APPLY_PUSH_PENDING');
+      assert.equal(fx.remote(), fx.P, 'remote untouched');
+      assert.equal(refusal(() => fx.cli('verify-overlay')), 'OVERLAY_NOT_ON_REMOTE');
+      allowPush(fx);
+      if (next === 'apply') assert.equal(fx.cli('apply').state, 'OVERLAY_ACTIVE_CONFIRMED');
+      else {
+        assert.equal(fx.cli('restore').state, 'NORMAL_CONFIRMED');
+        assert.equal(fx.remoteWorkflow(), BASELINE_WORKFLOW_BLOB);
+      }
+    } finally { fx.cleanup(); }
+  }
+});
+
+test('restore committed but not pushed / failed push: local baseline is never an overall normal', () => {
+  const fx = fixture();
+  try {
+    fx.cli('plan'); const { Y } = fx.cli('apply');
+    rejectPush(fx);
+    assert.equal(refusal(() => fx.cli('restore')), 'RESTORE_PUSH_PENDING');
+    assert.equal(fx.remote(), Y, 'remote still overlaid');
+    assert.equal(fx.run(['rev-parse', `HEAD:${WORKFLOW_PATH}`]), BASELINE_WORKFLOW_BLOB);
+    assert.equal(fx.run(['status', '--porcelain']), '', 'clean local baseline');
+    assert.equal(refusal(() => fx.cli('verify-normal')), 'REMOTE_STILL_OVERLAID');
+    const Z = fx.run(['rev-parse', 'HEAD']);
+    allowPush(fx);
+    assert.equal(fx.cli('restore').state, 'NORMAL_CONFIRMED');
+    assert.equal(fx.remote(), Z, 'same restore commit published, none duplicated');
+  } finally { fx.cleanup(); }
+});
+
+test('lost push acknowledgement: remote already restored is confirmed without a new push or commit', () => {
+  const fx = fixture();
+  try {
+    fx.cli('plan'); fx.cli('apply');
+    rejectPush(fx);
+    assert.equal(refusal(() => fx.cli('restore')), 'RESTORE_PUSH_PENDING');
+    allowPush(fx);
+    fx.run(['push', '-q', 'origin', 'HEAD:main']); // the push that "succeeded" out of band
+    const count = fx.commits();
+    const restored = fx.cli('restore');
+    assert.equal(restored.state, 'NORMAL_CONFIRMED');
+    assert.equal(fx.commits(), count);
+    // Same for apply: overlay push reached the remote but the tool never saw it.
+    const fy = fixture();
+    try {
+      fy.cli('plan'); rejectPush(fy);
+      assert.equal(refusal(() => fy.cli('apply')), 'APPLY_PUSH_PENDING');
+      allowPush(fy); fy.run(['push', '-q', 'origin', 'HEAD:main']);
+      const applied = fy.cli('apply');
+      assert.equal(applied.pushed, false);
+      assert.equal(applied.state, 'OVERLAY_ACTIVE_CONFIRMED');
+    } finally { fy.cleanup(); }
+  } finally { fx.cleanup(); }
+});
+
+test('unreachable remote is pending, never normal', () => {
+  const fx = fixture();
+  try {
+    fx.cli('plan'); fx.cli('apply'); fx.cli('restore');
+    renameSync(fx.bare, fx.bare + '.offline');
+    assert.equal(refusal(() => fx.cli('verify-normal')), 'REMOTE_UNAVAILABLE');
+    renameSync(fx.bare + '.offline', fx.bare);
+    assert.equal(fx.cli('verify-normal').state, 'NORMAL_CONFIRMED');
+  } finally { fx.cleanup(); }
+});
+
+test('wrong fetch/push destination, branch or remote default branch are refused before any mutation', () => {
+  const fx = fixture();
+  try {
+    const other = join(fx.base, 'other.git').replaceAll('\\', '/');
+    git(fx.base, ['init', '-q', '--bare', '-b', 'main', other]);
+    const snapshot = () => [fx.run(['rev-parse', 'HEAD']), fx.run(['status', '--porcelain']), fx.remote()];
+    const before = snapshot();
+    assert.equal(refusal(() => main(['plan', fx.dir, '--requested', fx.parameters.requestedSha,
+      '--observed', fx.parameters.observedSha, '--request-id', U])), 'WRONG_DESTINATION', 'CLI default is canonical only');
+    fx.run(['remote', 'set-url', '--push', 'origin', other]);
+    assert.equal(refusal(() => fx.cli('plan')), 'WRONG_DESTINATION');
+    fx.run(['config', '--unset', 'remote.origin.pushurl']);
+    fx.run(['checkout', '-q', '-b', 'side']);
+    assert.equal(refusal(() => fx.cli('plan')), 'WRONG_BRANCH');
+    fx.run(['checkout', '-q', 'main']);
+    git(fx.base, ['--git-dir', fx.bare, 'branch', 'trunk', 'main']);
+    git(fx.base, ['--git-dir', fx.bare, 'symbolic-ref', 'HEAD', 'refs/heads/trunk']);
+    assert.equal(refusal(() => fx.cli('plan')), 'WRONG_DEFAULT_BRANCH');
+    git(fx.base, ['--git-dir', fx.bare, 'symbolic-ref', 'HEAD', 'refs/heads/main']);
+    fx.run(['config', 'core.autocrlf', 'true']);
+    assert.equal(refusal(() => fx.cli('plan')), 'LINE_ENDING_CONVERSION');
+    fx.run(['config', 'core.autocrlf', 'false']);
+    assert.deepEqual(snapshot(), before);
+    assert.equal(existsSync(join(fx.dir, '.git', 'grl-g1-witness-plan.json')), false);
+  } finally { fx.cleanup(); }
+});
+
+test('unexpected remote advance is refused and never overwritten', () => {
+  const fx = fixture();
+  try {
+    fx.cli('plan'); fx.cli('apply');
+    // Someone else advances remote main from another clone.
+    const other = join(fx.base, 'other');
+    git(fx.base, ['clone', '-q', fx.bare, other]);
+    git(other, ['-c', 'user.name=x', '-c', 'user.email=x@example.invalid', 'commit', '-q', '--allow-empty', '-m', 'foreign']);
+    git(other, ['push', '-q', 'origin', 'main']);
+    const foreign = fx.remote();
+    assert.equal(refusal(() => fx.cli('restore')), 'REMOTE_DRIFT');
+    assert.equal(fx.remote(), foreign, 'remote not overwritten');
+    assert.equal(refusal(() => fx.cli('verify-normal')), 'REMOTE_NOT_RESTORED');
+    // Before apply as well: plan requires local HEAD == actual remote main.
+    const fy = fixture();
+    try {
+      const o2 = join(fy.base, 'other');
+      git(fy.base, ['clone', '-q', fy.bare, o2]);
+      git(o2, ['-c', 'user.name=x', '-c', 'user.email=x@example.invalid', 'commit', '-q', '--allow-empty', '-m', 'foreign']);
+      git(o2, ['push', '-q', 'origin', 'main']);
+      assert.equal(refusal(() => fy.cli('plan')), 'LOCAL_NOT_REMOTE_MAIN');
+    } finally { fy.cleanup(); }
+  } finally { fx.cleanup(); }
+});
+
+test('unrelated changes and unknown workflow bytes are preserved and refused', () => {
+  const fx = fixture();
+  try {
+    fx.cli('plan'); fx.cli('apply');
+    writeFileSync(join(fx.dir, WORKFLOW_PATH), baseline);
+    writeFileSync(join(fx.dir, 'README.md'), 'operator edit\n');
+    writeFileSync(join(fx.dir, 'notes.txt'), 'untracked\n');
+    const head = fx.run(['rev-parse', 'HEAD']);
+    for (const command of ['restore', 'apply', 'verify-normal', 'verify-overlay'])
+      assert.equal(refusal(() => fx.cli(command)), 'UNRELATED_CHANGES', command);
+    assert.equal(fx.run(['rev-parse', 'HEAD']), head, 'no commit made');
+    assert.equal(readFileSync(join(fx.dir, 'README.md'), 'utf8'), 'operator edit\n');
+    assert.equal(readFileSync(join(fx.dir, 'notes.txt'), 'utf8'), 'untracked\n');
+    assert.ok(workflowBytes(fx).equals(baseline));
+    rmSync(join(fx.dir, 'notes.txt')); fx.run(['checkout', '-q', '--', 'README.md']);
+    const partial = baseline.subarray(0, 100);
+    writeFileSync(join(fx.dir, WORKFLOW_PATH), partial);
+    for (const command of ['restore', 'apply', 'verify-normal'])
+      assert.equal(refusal(() => fx.cli(command)), 'UNKNOWN_WORKFLOW_BYTES', command);
+    assert.ok(workflowBytes(fx).equals(partial), 'unknown bytes preserved');
+    assert.equal(fx.remote(), head, 'override stays visible as pending, not reported normal');
+    writeFileSync(join(fx.dir, WORKFLOW_PATH), baseline);
+    assert.equal(fx.cli('restore').state, 'NORMAL_CONFIRMED');
+  } finally { fx.cleanup(); }
+});
+
+test('missing, corrupt or mismatched checkpoints are refused without mutation', () => {
+  const fx = fixture();
+  try {
+    assert.equal(refusal(() => fx.cli('apply')), 'PLAN_MISSING');
+    assert.equal(refusal(() => fx.cli('restore')), 'PLAN_MISSING');
+    fx.cli('plan');
+    const planFile = join(fx.dir, '.git', 'grl-g1-witness-plan.json');
+    const saved = readFileSync(planFile);
+    assert.equal(refusal(() => fx.cli('apply', { ...fx.parameters, requestId: 'a1b2c3d4-0000-4000-8000-000000000000' })),
+      'PLAN_MISMATCH');
+    writeFileSync(planFile, '{not json');
+    assert.equal(refusal(() => fx.cli('apply')), 'PLAN_CORRUPT');
+    const tampered = JSON.parse(saved); tampered.treeP = "0".repeat(40);
+    writeFileSync(planFile, JSON.stringify(tampered));
+    assert.equal(refusal(() => fx.cli('apply')), 'PLAN_CORRUPT');
+    assert.equal(fx.run(['rev-parse', 'HEAD']), fx.P);
+    assert.equal(fx.run(['status', '--porcelain']), '');
+    assert.equal(fx.remote(), fx.P);
+    writeFileSync(planFile, saved);
+    assert.equal(fx.cli('apply').state, 'OVERLAY_ACTIVE_CONFIRMED');
+  } finally { fx.cleanup(); }
+});
+
+test('plan preconditions: dirty tree, foreign or non-commit SHAs, drifted baseline', () => {
+  const fx = fixture();
+  try {
+    writeFileSync(join(fx.dir, 'stray.txt'), 'x');
+    assert.equal(refusal(() => fx.cli('plan')), 'DIRTY_TREE');
+    rmSync(join(fx.dir, 'stray.txt'));
+    assert.equal(refusal(() => fx.cli('plan', { ...fx.parameters, observedSha: 'e'.repeat(40) })),
       'OBSERVED_NOT_IN_HISTORY');
-    const tree = run(['rev-parse', 'HEAD^{tree}']);
-    assert.equal(refusal(() => cli('plan', dir, { ...parameters, requestedSha: tree })),
-      'REQUESTED_NOT_IN_HISTORY');
-    run(['checkout', '-q', '-b', 'side']);
-    run(['commit', '-q', '--allow-empty', '-m', 'not on main']);
-    const side = run(['rev-parse', 'HEAD']);
-    run(['checkout', '-q', 'main']);
-    assert.equal(refusal(() => cli('plan', dir, { ...parameters, requestedSha: side })),
-      'REQUESTED_NOT_IN_HISTORY');
-    writeFileSync(join(dir, WORKFLOW_PATH), baseline.toString('utf8').replace('timeout-minutes: 10', 'timeout-minutes: 9'));
-    run(['commit', '-q', '-am', 'drift']);
-    assert.equal(refusal(() => cli('apply', dir, parameters)), 'BASELINE_DRIFT');
-  } finally { rmSync(dir, { recursive: true, force: true }); }
+    const tree = fx.run(['rev-parse', 'HEAD^{tree}']);
+    assert.equal(refusal(() => fx.cli('plan', { ...fx.parameters, requestedSha: tree })), 'REQUESTED_NOT_IN_HISTORY');
+    fx.run(['checkout', '-q', '-b', 'side']);
+    fx.run(['commit', '-q', '--allow-empty', '-m', 'not on main']);
+    const side = fx.run(['rev-parse', 'HEAD']);
+    fx.run(['checkout', '-q', 'main']);
+    assert.equal(refusal(() => fx.cli('plan', { ...fx.parameters, requestedSha: side })), 'REQUESTED_NOT_IN_HISTORY');
+    writeFileSync(join(fx.dir, WORKFLOW_PATH), baseline.toString('utf8').replace('timeout-minutes: 10', 'timeout-minutes: 9'));
+    fx.run(['commit', '-q', '-am', 'drift']); fx.run(['push', '-q', 'origin', 'main']);
+    assert.equal(refusal(() => fx.cli('plan')), 'BASELINE_DRIFT');
+  } finally { fx.cleanup(); }
+});
+
+test('a HEAD that is not the recognized overlay/restore lineage is refused', () => {
+  const fx = fixture();
+  try {
+    fx.cli('plan');
+    writeFileSync(join(fx.dir, WORKFLOW_PATH), fx.overlay);
+    writeFileSync(join(fx.dir, 'README.md'), 'changed\n');
+    fx.run(['commit', '-q', '-am', 'overlay plus unrelated change']);
+    const head = fx.run(['rev-parse', 'HEAD']);
+    for (const command of ['apply', 'restore', 'verify-overlay', 'verify-normal'])
+      assert.equal(refusal(() => fx.cli(command)), 'UNEXPECTED_HEAD', command);
+    assert.equal(fx.run(['rev-parse', 'HEAD']), head);
+    assert.equal(fx.remote(), fx.P);
+  } finally { fx.cleanup(); }
+});
+
+test('status reports state without mutating anything', () => {
+  const fx = fixture();
+  try {
+    fx.cli('plan'); fx.cli('apply');
+    writeFileSync(join(fx.dir, WORKFLOW_PATH), baseline);
+    const report = fx.cli('status');
+    assert.equal(report.destination, 'OK');
+    assert.equal(report.local.head, 'Y');
+    assert.equal(report.local.worktree, 'baseline');
+    assert.equal(report.remote.kind, 'Y');
+    assert.ok(workflowBytes(fx).equals(baseline));
+    assert.equal(fx.run(['diff', '--cached', '--name-only']), '');
+  } finally { fx.cleanup(); }
 });
 
 test('unchanged run-profile refuses a genuinely different checkout HEAD with zero processes', () => {
-  const { dir, run, parameters } = fixtureRepo();
+  const fx = fixture(); const { dir, run, parameters } = fx;
   const work = mkdtempSync(join(tmpdir(), 'grl-g1-witness-ws-'));
   try {
     // What the overlaid execute job produces: grl-target really checked out at the observed commit.
@@ -215,17 +499,7 @@ test('unchanged run-profile refuses a genuinely different checkout HEAD with zer
     assert.equal(readFileSync(join(work, 'grl-outcome', 'result.json'), 'utf8'), '{"stale":true}');
     assert.equal(run(['status', '--porcelain']), '');
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    fx.cleanup();
     rmSync(work, { recursive: true, force: true });
   }
-});
-
-test('CLI refuses an overlay commit that touches anything but the workflow', () => {
-  const { dir, run, parameters } = fixtureRepo();
-  try {
-    cli('apply', dir, parameters);
-    writeFileSync(join(dir, 'README.md'), 'changed\n');
-    run(['commit', '-q', '-am', 'overlay plus unrelated change']);
-    assert.equal(refusal(() => cli('verify-overlay', dir, parameters)), 'OVERLAY_COMMIT_SCOPE');
-  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
