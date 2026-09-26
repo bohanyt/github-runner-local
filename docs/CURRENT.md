@@ -1,45 +1,48 @@
 # CURRENT — github-runner-local
 
-Updated: 2026-09-26. Phase: **G1_OFFICE_PASS_CT_ACCEPTED; GRL015_PR22_INDEPENDENT_REVIEW_READY**.
+Updated: 2026-09-26. Phase: **G1_OFFICE_PASS_CT_ACCEPTED; GRL015_PR22_JUNCTION_CORRECTION_READY**.
 
 ## Authority
 
 - Canonical branch: main; continuing owner-designated Control Tower coordinates on Issue #1.
-- Handoff: `docs/control-tower/handoffs/GRL-20260926-PR22-REOPEN-REVIEW-V46.md`.
-- Sentinel: `END_OF_GRL_HANDOFF key=GRL-20260926-PR22-REOPEN-REVIEW-V46 sections=5`.
+- Handoff: `docs/control-tower/handoffs/GRL-20260926-PR22-JUNCTION-CORRECTION-V47.md`.
+- Sentinel: `END_OF_GRL_HANDOFF key=GRL-20260926-PR22-JUNCTION-CORRECTION-V47 sections=5`.
 - Active task: Issue #21 / GRL-015.
-- Active review packet: Issue #21 comment **`5842772958`**, FULL through `END_OF_GRL015_REVIEW_PACKET key=GRL-PR22-7D4FF0F-REOPEN-REVIEW-20260926 sections=6`.
+- Active correction packet: Issue #21 comment **`5842873213`**, FULL through `END_OF_GRL015_CORRECTION_PACKET key=GRL-PR22-JUNCTION-R1-20260926 sections=6`.
 
-## Candidate
+## Review result
 
-DRAFT PR #22:
-- `feat/grl-015-planned-reopen-resume`
-- exact head `7d4ff0f07d4b93562932469b48d1310069f8dc91`
-- base `3ae26872430c0aded342d15cdbac3a315ecb2f8b`
-- 12 changed paths, one commit.
+Independent review `5842855807` at PR #22 head
+`7d4ff0f07d4b93562932469b48d1310069f8dc91` found ONE
+SAFETY_BLOCKER: the reopened listener path accepts a redirected `bin` junction.
 
-Implementation handoff `5842736701`; implementation claim released by `5842738309`.
+Reviewer independently passed Integration 170/170 and Presentation 64/64, found
+0 additional REOPEN_PATH_BLOCKER and 0 new DEFERRED issues, and released claim
+`5842857983`.
 
-Worker reports build clean, Integration 170/170, Presentation 64/64, Core 192/192 and six mutation checks caught. These are LOCAL_CHECKED worker evidence until independent review.
+All other reviewed planned-reopen behavior remains accepted for the correction
+cycle.
 
-## Review gate
+## Immediate next
 
-ONE separate reviewer now checks the bounded planned-pause recovery/resume delta. No subagents.
+SAME local Opus takes one narrow correction claim and continues SAME branch /
+SAME DRAFT PR #22. Primary source scope is
+`src/Grl.Integration/PortableRunnerProcess.cs` plus targeted Integration
+regression(s).
 
-Review must verify exact-ID/offline/non-busy recovery eligibility, run.cmd-only existing-root start with no configure/registration token, listener-only version verification, concurrency/duplicate-start prevention, truthful failure states, no adoption of unowned online process, and correct UI eligibility.
+Reject every reparse/junction component on
+`root\bin\Runner.Listener.exe` before listener execution and preserve the
+immediate ordinary root/run.cmd check before start.
 
-No live runner mutation, Stop Now, app close/relaunch or reboot at this gate.
+No lifecycle/UX redesign, no G1 rerun, no live Stop Now/close/reboot.
 
-## Sequence
-
-**SEQUENTIAL:** independent PASS -> CT merge/resume -> SAME local Opus close/relaunch acceptance -> planned reboot acceptance -> Issue #18.
-
-G1 remains CT-accepted and closed. Do not rerun G1 or PR #19.
+After correction handoff/release: ONE focused rereview -> CT merge/resume -> SAME
+Opus live close/relaunch -> planned reboot -> Issue #18.
 
 ## Safety
 
-ARCHIVE/CHECKPOINT FIRST. Preserve office runner/root/credentials/private history and G1 evidence.
+ARCHIVE/CHECKPOINT FIRST. Preserve runner/root/credentials/history, old PR head
+and accepted G1 evidence. No hosted Actions, service/autostart, security/sleep
+changes, personal runner, Stage-2/cross-repo/arbitrary jobs or global auth/env reset.
 
-No hosted Actions, service/autostart, security/sleep changes, personal runner, Stage-2/cross-repo/arbitrary jobs or global auth/env reset.
-
-NF-2 stays deferred unless directly implicated by a concrete finding.
+NF-2 remains deferred.
