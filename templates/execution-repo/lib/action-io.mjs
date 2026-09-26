@@ -1,14 +1,17 @@
 import { appendFileSync, readFileSync } from 'node:fs';
 import { ProtocolError, decoded, redact } from './protocol.mjs';
 
+// Same key as the official runner: spaces become underscores, hyphens are kept.
+const inputKey = name => 'INPUT_' + name.replaceAll(' ', '_').toUpperCase();
+
 export function input(name) {
-  const value = process.env['INPUT_' + name.toUpperCase().replaceAll('-', '_')];
+  const value = process.env[inputKey(name)];
   if (!value) throw new ProtocolError('MISSING_ACTION_INPUT');
   return value;
 }
 
 export function optionalInput(name) {
-  return process.env['INPUT_' + name.toUpperCase().replaceAll('-', '_')] ?? '';
+  return process.env[inputKey(name)] ?? '';
 }
 
 export function output(name, value) {
