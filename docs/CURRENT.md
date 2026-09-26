@@ -1,44 +1,45 @@
 # CURRENT — github-runner-local
 
-Updated: 2026-09-26. Phase: **G1_OFFICE_PASS_CT_ACCEPTED; POST_G1_REOPEN_RESTART_READY**.
+Updated: 2026-09-26. Phase: **G1_OFFICE_PASS_CT_ACCEPTED; GRL015_PR22_INDEPENDENT_REVIEW_READY**.
 
 ## Authority
 
 - Canonical branch: main; continuing owner-designated Control Tower coordinates on Issue #1.
-- Handoff: `docs/control-tower/handoffs/GRL-20260926-G1-ACCEPTED-REOPEN-READY-V45.md`.
-- Sentinel: `END_OF_GRL_HANDOFF key=GRL-20260926-G1-ACCEPTED-REOPEN-READY-V45 sections=5`.
-- Active task: **Issue #21 — GRL-015 post-G1 reopen/restart reliability**, FULL through `END_OF_GRL_REOPEN_PACKET key=GRL-015-PLANNED-REOPEN-REBOOT-20260926 sections=9`.
+- Handoff: `docs/control-tower/handoffs/GRL-20260926-PR22-REOPEN-REVIEW-V46.md`.
+- Sentinel: `END_OF_GRL_HANDOFF key=GRL-20260926-PR22-REOPEN-REVIEW-V46 sections=5`.
+- Active task: Issue #21 / GRL-015.
+- Active review packet: Issue #21 comment **`5842772958`**, FULL through `END_OF_GRL015_REVIEW_PACKET key=GRL-PR22-7D4FF0F-REOPEN-REVIEW-20260926 sections=6`.
 
-## G1 complete
+## Candidate
 
-CT accepted G1 in Issue #15 comment `5842517893` after final operator report `5842484351` / release `5842487360`.
+DRAFT PR #22:
+- `feat/grl-015-planned-reopen-resume`
+- exact head `7d4ff0f07d4b93562932469b48d1310069f8dc91`
+- base `3ae26872430c0aded342d15cdbac3a315ecb2f8b`
+- 12 changed paths, one commit.
 
-Accepted live proof:
-- normal positive run `36208004263` success;
-- non-mailbox prefilter run `36202109916` skipped;
-- FAULT_INJECTED checkout-mismatch run `36212223535` failed as designed with refusal evidence;
-- private main restored to `2c8da8834e785ba012001b9427bd68380401bec7`;
-- reviewed normal workflow blob `71e0271ee9c1146ebcdc2ac9d982b32c1a773b5d` restored.
+Implementation handoff `5842736701`; implementation claim released by `5842738309`.
 
-Do not reopen G1 for generic cleanup. PR #19 stays preserved/draft as acceptance-tool history.
+Worker reports build clean, Integration 170/170, Presentation 64/64, Core 192/192 and six mutation checks caught. These are LOCAL_CHECKED worker evidence until independent review.
 
-## Next product gap
+## Review gate
 
-Current source detects an existing runner root but treats reopen as recovery-only; a fresh app process cannot resume the persisted exact runner registration. Issue #21 addresses only planned recovery from an explicit Paused/no-survivor state.
+ONE separate reviewer now checks the bounded planned-pause recovery/resume delta. No subagents.
 
-Target user flow:
-explicit warned Stop Now while no known job -> close app -> relaunch -> sign in if required -> Resume existing runner -> SAME runner ID online -> harmless job PASS; then repeat across a planned reboot.
+Review must verify exact-ID/offline/non-busy recovery eligibility, run.cmd-only existing-root start with no configure/registration token, listener-only version verification, concurrency/duplicate-start prevention, truthful failure states, no adoption of unowned online process, and correct UI eligibility.
 
-Unplanned survivor/uncertain state remains fail-closed. No duplicate registration or config.cmd on reopen.
+No live runner mutation, Stop Now, app close/relaunch or reboot at this gate.
 
 ## Sequence
 
-**SEQUENTIAL:** broad implementation/DRAFT PR -> one focused independent review -> CT merge/resume -> same local Opus close/relaunch live proof -> planned reboot proof -> Issue #18 office/personal switching.
+**SEQUENTIAL:** independent PASS -> CT merge/resume -> SAME local Opus close/relaunch acceptance -> planned reboot acceptance -> Issue #18.
 
-Implementation is source-only until the live gate. Do not Stop Now/close/reboot the proven office runner merely to develop the code.
+G1 remains CT-accepted and closed. Do not rerun G1 or PR #19.
 
-## Standing safety
+## Safety
 
-ARCHIVE/CHECKPOINT FIRST. Preserve registration/root/credentials/history. No hosted Actions, service/autostart, security/sleep changes, personal runner, Stage-2/cross-repo/arbitrary execution or global auth/env reset.
+ARCHIVE/CHECKPOINT FIRST. Preserve office runner/root/credentials/private history and G1 evidence.
 
-NF-2 stays deferred unless it directly blocks Issue #21.
+No hosted Actions, service/autostart, security/sleep changes, personal runner, Stage-2/cross-repo/arbitrary jobs or global auth/env reset.
+
+NF-2 stays deferred unless directly implicated by a concrete finding.
