@@ -1,33 +1,32 @@
 # CURRENT — github-runner-local
 
-Updated: 2026-09-26. Phase: **PR19_W1_CLOSURE_REVIEW_READY; LIVE_RETRY_GATED; G1_NOT_PASSED**.
+Updated: 2026-09-26. Phase: **NF1_SUBSET_MERGED; NORMAL_POSITIVE_RESUME_READY; WITNESS_S1_GATED; G1_INCOMPLETE**.
 
 ## Authority
 
 - Canonical branch: main; continuing owner-designated Control Tower coordinates on Issue #1.
-- Handoff: `docs/control-tower/handoffs/GRL-20260926-PR19-W1-CLOSURE-FIRST-JOB-V42.md`.
-- Sentinel: `END_OF_GRL_HANDOFF key=GRL-20260926-PR19-W1-CLOSURE-FIRST-JOB-V42 sections=4`.
-- Active Issue #15 closure instruction **`5841673060`**, full through `END_OF_GRL_W1_CLOSURE_PACKET key=GRL-PR19-F911E7B-W1-CLOSURE-20260926 sections=4`.
-- W-1 contract `5841514277`, original witness contract `5841236994` and CT-SCOPE-1 `5841404018` remain.
+- Handoff: `docs/control-tower/handoffs/GRL-20260926-NF1-ISOLATED-NORMAL-POSITIVE-V43.md`.
+- Sentinel: `END_OF_GRL_HANDOFF key=GRL-20260926-NF1-ISOLATED-NORMAL-POSITIVE-V43 sections=4`.
+- Active Issue #15 isolation/resume packet **`5841766071`**, FULL through `END_OF_GRL_NF1_ISOLATION_PACKET key=GRL-NF1-REVIEWED-SUBSET-NORMAL-POSITIVE-20260926 sections=4`.
 
-## Candidate and evidence
+## NF-1 merged; unsafe witness excluded
 
-SAME DRAFT PR #19 / fix/g1-action-input-env, head `f911e7be18d7c574947416609be4c797c360eada`, old head `5d4b45b40ddee356b57069267e19a64b60d99789`, original source base `6e7ef6efd3e48fcd44645e4270eda800edf22e68`. Worker handoff `5841641608`; implementation claim `5841535729` released by `5841643269`. CT verified one fast-forward commit changes only the three witness paths. Worker reports 22/22 offline witness tests and unchanged template tree `4855ddca0143de2e0e21d95946b0e1b465b35143`; not yet independently accepted W-1 closure.
+Independent closure review `5841741557` / release `5841743418`: original W-1 interruption and false-normal failures CLOSED offline; S-1 SAFETY_BLOCKER remains in the runbook's unchecked first anchor commit/push. NF-1 PASS retained. CT now separates the deployable fix from the unavailable harness, rather than another expanding tool rewrite.
 
-Retain independent NF-1 PASS and WRITE_SCOPE_POLICY_EXCEPTION_CONFIRMED from `5841490920` once unchanged blobs confirmed. Prior 117/118 (WRITE_SCOPE only) is historical raw evidence, not a new all-green run. No repeated NF-1/template/D/.NET/WPF/probe campaign required for unchanged code.
+PR #20 **MERGED** at `1aa9a91695029bc461b0e38ab180dc3ee8959a5d`, selecting original implementer commit `7bc4cecfc55465c5dc8b16bf474922bd53956707` unchanged. CT gate `5841772198`. Only template `lib/action-io.mjs` and `tests/action-io.test.mjs`; corrected template tree `4855ddca0143de2e0e21d95946b0e1b465b35143` matches the separately reviewed template exactly. Selected-commit-to-merge changes are docs only. NF-1 independent component acceptance is reused, not a new CT self-review or test run.
 
-## Next: close W-1, then the first real job
+PR #19 remains draft/unmerged at `f911e7be18d7c574947416609be4c797c360eada`, history untouched; its three witness files are NOT in merged main. S-1 is not waived. No anchor/overlay/fault injection or harness execution authorized. Historical integrated template 117/118 (WRITE_SCOPE only), NF-1 10/10 and witness 22/22 remain attributed to prior runs, not relabelled all-green/newly run.
 
-After CT claim `5841669712` release/no competitor, ONE focused independent reviewer, preferably SAME session that found W-1, takes a claim. Review only the correction and relevant integration: interruption recovery, preservation, destination, uncertain pushes and truthful local+remote normal verification. Execute focused checks; publish exact-head integrated PASS or concrete blocker and release. No subagents, source edits or live actions.
+## Immediate next: SAME local Opus, one normal positive
 
-**SEQUENTIAL:** focused closure -> separate CT merge/resume -> SAME local Opus updates the reviewed private template on existing grl-office registration and runs the normal positive request FIRST, then remaining required G1 proof and exact restoration. No new generic pre-live campaign or larger recovery-tool project. A remaining harness blocker triggers a concrete smaller/isolation decision, not automatic expanding correction loops. No unsafe merge or missing-proof waiver. Full G1 requires all original positive/negative evidence.
+After CT claim `5841762086` release/no competing operator, take a fresh Issue #1 claim and run the normal-positive operation under `5841766071`. Reuse existing grl-office ID 2, wizard/root, mailbox #1/four variables. Fresh-check actual ownership/online/version/non-elevation/queue/private repo/disk; do not reinstall or adopt unknown state.
 
-## Installed versus usable
+Execute correct-private-destination/branch and clean index/worktree checks BEFORE any private commit/push, including effective fetch/push URLs. Checkpoint current private refs/tree/settings, apply only the reviewed two-file template delta with exact pre-state checks, normal fast-forward and fresh actual-remote verification. Final private root tree must be `4855ddca0143de2e0e21d95946b0e1b465b35143`. Last-known private main `3ca0449e39fdc28cf5ca15b30967833a95649192` is not authority to overwrite drift.
 
-Product installation/login/enrollment is already real per operator report `5841173894`. Last operator check: grl-office ID 2 online/idle, wizard running, mailbox #1/four variables intact. CT freshly verified private main still `3ca0449e39fdc28cf5ca15b30967833a95649192`, so corrected NF-1 is not deployed. First positive run `36201953082` failed before ACK; prefilter negative `36202109916` passed. No working end-to-end positive/G1 PASS yet. Current local liveness is not independently checked by CT.
+Submit ONE new ordinary harmless same-repo js-smoke request at the corrected SHA and follow ACK/execution/result/status/verdict to completion. Preserve exact evidence; publish promptly on Issue #15 and release claim. Successful positive = **NORMAL_POSITIVE_PASS / G1_INCOMPLETE**, not G1_OFFICE_PASS. Required mismatch/refusal proof remains gated. No further harness implementation or generic review/test loop before trying the accepted normal path; no .NET/WPF/384-test/probe rerun for unchanged code.
 
-Goal: approved GitHub-mediated request -> local job -> structured result, initially same-repo harmless js-smoke. Not unrestricted shell/MCP or arbitrary project execution. Reopen/reboot and Issue #18 switching remain later product work.
+**SEQUENTIAL:** isolated merge completed -> SAME local normal-positive deployment/run/report -> later narrow S-1 witness closure and remaining G1 evidence. No subagents, no parallel private mutation. Historical prefilter `36202109916` stays historical. Full G1 and personal enrollment are still gated; do not mark the whole goal finished at positive-only progress.
 
 ## Safety
 
-Preserve wizard/root/registration/private history/settings; no new live requests/deployment/overlay under this review gate. No implicit Stop Now/unregister/reboot/reinstall or idle-based safety claim. No hosted Actions, service/UAC/security/sleep-policy changes, cross-repo/Stage-2/personal runner or global auth/env reset. ARCHIVE/CHECKPOINT FIRST; prior main `905c1649bef2d3fd6e9db6d1956982eb9ca7b8c8` and V41 remain recoverable. NF-2 stays deferred. Keep secrets/local machine details private. CT has not launched a worker or monitor.
+Preserve wizard/root/registration/private history/settings/evidence. No implicit Stop Now/unregister/close-relaunch/reboot/reinstall or idle-based safety assumption. No hosted Actions, service/UAC/security/sleep-policy changes, arbitrary/cross-repo/Stage-2/personal jobs or global env/auth resets. ARCHIVE/CHECKPOINT FIRST; pre-merge main `184e3a87c21d21ba62b04dcbc462ed530a706f86`/V42 and all original PR commits remain recoverable. Keep secrets/machine details private. NF-2/reopen/restart and Issue #18 switching stay later. CT has not deployed privately, run live work, or launched a background agent/monitor.
