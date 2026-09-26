@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Grl.App.Presentation;
 using Grl.Core;
 using Grl.Integration;
@@ -521,6 +522,183 @@ public sealed partial class PortableLifecycleTests
         Assert.Equal(0, admin.RemoveTokenRequests); // no config.cmd remove
         Assert.Empty(process.Commands);
         Assert.False(adapter.HasPendingRecovery);
+    }
+
+    // R-GRL015-1: the reviewer's real failure shape — an ordinary root whose bin is a Windows
+    // directory junction to a scratch directory holding a harmless Runner.Listener.exe that
+    // reports 2.337.0 if executed. The full path must be refused before anything runs.
+    [Fact]
+    public async Task ReopenedJunctionedBinIsRefusedBeforeListenerRunsOrRunCmdStarts()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        using var root = new FakeRoot();
+        using var scratch = new ScratchDirectory();
+        var redirected = WriteHarmlessListener(scratch.Path);
+        AssertListenerWouldReportReviewedVersion(redirected);
+        using var junction = CreateJunction(System.IO.Path.Combine(root.Path, "bin"), scratch.Path);
+        WriteRunLayout(root.Path);
+        using var store = PausedStore(root);
+        var original = RecoveryBytes(root);
+        var admin = new FakeAdmin { Lists = Pages([Runner(42, false)], [Runner(42, true)]) };
+        var existing = PortableRunnerProcess.ForExistingRoot(root.Path, isElevated: () => false);
+
+        var probe = await Assert.ThrowsAsync<RunnerProcessException>(() => existing.VerifyListenerVersionAsync(default));
+        Assert.Equal(RunnerProcessFailure.InvalidRoot, probe.Failure);
+
+        using var lifecycle = PortableRunnerLifecycle.RestorePlannedPause(admin, existing, "runner-1", "grl-exec",
+            store, Assert.IsType<PortableRecoveryEvidence>(store.Read()), new NoDelay(), isElevated: () => false);
+        var resume = await Assert.ThrowsAsync<PortableRunnerException>(() => lifecycle.ResumeAsync(1, TimeSpan.Zero, default));
+
+        Assert.Equal(PortableRunnerFailure.UnsupportedVersion, resume.Failure); // listener unverifiable: no start
+        Assert.False(File.Exists(ListenerMarker(scratch.Path)));  // redirected listener never executed
+        Assert.False(File.Exists(RunMarker(root.Path)));          // run.cmd never started
+        Assert.False(lifecycle.HasOwnedProcess);
+        Assert.Equal(PortableRunnerState.Paused, lifecycle.State);
+        Assert.Equal(original, RecoveryBytes(root));              // still the same resumable planned pause
+        Assert.Equal(0, admin.RegistrationTokenRequests);
+    }
+
+    [Fact]
+    public async Task OrdinaryExistingRootStillVerifiesListenerAndStartsRunCmd()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        using var root = new FakeRoot();
+        var bin = Directory.CreateDirectory(System.IO.Path.Combine(root.Path, "bin")).FullName;
+        WriteHarmlessListener(bin);
+        WriteRunLayout(root.Path);
+        var existing = PortableRunnerProcess.ForExistingRoot(root.Path, isElevated: () => false);
+
+        var cli = await existing.VerifyListenerVersionAsync(default);
+        Assert.Equal(RunnerPin.ReviewedVersion, cli.Capabilities.Version);
+        Assert.True(File.Exists(ListenerMarker(bin)));
+
+        using var run = cli.BuildRun();
+        using var started = await existing.StartAsync(run, cli.Capabilities.Version, default); // boundary passed
+        // With NoDefaultCurrentDirectoryInExePath set (deferred NF-2 shells), cmd cannot resolve run.cmd
+        // from its working directory, so the batch's own marker is asserted only in an ordinary environment.
+        if (Environment.GetEnvironmentVariable("NoDefaultCurrentDirectoryInExePath") is null)
+            await WaitForFileAsync(RunMarker(root.Path));
+        await started.StopAsync(default); // ensure the harmless batch has exited before cleanup
+    }
+
+    [Fact]
+    public async Task BinRedirectedAfterListenerVerificationIsRefusedAtRunStart()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        using var root = new FakeRoot();
+        using var scratch = new ScratchDirectory();
+        var bin = Directory.CreateDirectory(System.IO.Path.Combine(root.Path, "bin")).FullName;
+        WriteHarmlessListener(bin);
+        WriteRunLayout(root.Path);
+        var existing = PortableRunnerProcess.ForExistingRoot(root.Path, isElevated: () => false);
+        var cli = await existing.VerifyListenerVersionAsync(default);
+
+        // After verification, bin is swapped for a junction to another harmless listener.
+        Directory.Move(bin, System.IO.Path.Combine(root.Path, "bin-verified"));
+        WriteHarmlessListener(scratch.Path);
+        using var junction = CreateJunction(bin, scratch.Path);
+
+        using var run = cli.BuildRun();
+        var start = await Assert.ThrowsAsync<RunnerProcessException>(() =>
+            existing.StartAsync(run, cli.Capabilities.Version, default));
+
+        Assert.Equal(RunnerProcessFailure.InvalidRoot, start.Failure);
+        await Task.Delay(500);
+        Assert.False(File.Exists(RunMarker(root.Path)));
+        Assert.False(File.Exists(ListenerMarker(scratch.Path)));
+    }
+
+    private static readonly Lazy<string> HarmlessListenerBuild = new(BuildHarmlessListener);
+
+    // A tiny .NET Framework console program compiled by Windows PowerShell: it writes a marker next
+    // to itself and prints the reviewed version. It is harmless and never contacts anything.
+    private static string BuildHarmlessListener()
+    {
+        var directory = Directory.CreateDirectory(System.IO.Path.Combine(System.IO.Path.GetTempPath(),
+            "grl-harmless-listener-" + Guid.NewGuid().ToString("N"))).FullName;
+        var source = System.IO.Path.Combine(directory, "Listener.cs");
+        var exe = System.IO.Path.Combine(directory, "Runner.Listener.exe");
+        File.WriteAllText(source, """
+            using System;
+            using System.IO;
+            public static class HarmlessListener
+            {
+                public static int Main(string[] args)
+                {
+                    File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "listener-ran.marker"), "ran");
+                    Console.WriteLine("2.337.0");
+                    return 0;
+                }
+            }
+            """);
+        var build = new ProcessStartInfo("powershell.exe") { UseShellExecute = false, CreateNoWindow = true };
+        foreach (var argument in new[] { "-NoLogo", "-NoProfile", "-NonInteractive", "-Command",
+            $"Add-Type -Path '{source}' -OutputAssembly '{exe}' -OutputType ConsoleApplication" })
+            build.ArgumentList.Add(argument);
+        using var process = Process.Start(build)!;
+        Assert.True(process.WaitForExit(120_000));
+        Assert.True(process.ExitCode == 0 && File.Exists(exe), "harmless listener fixture did not compile");
+        return exe;
+    }
+
+    private static string WriteHarmlessListener(string directory)
+    {
+        var target = System.IO.Path.Combine(directory, "Runner.Listener.exe");
+        File.Copy(HarmlessListenerBuild.Value, target);
+        return target;
+    }
+
+    private static void AssertListenerWouldReportReviewedVersion(string listener)
+    {
+        var info = new ProcessStartInfo(listener, "--version") { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true };
+        using var process = Process.Start(info)!;
+        var output = process.StandardOutput.ReadToEnd();
+        Assert.True(process.WaitForExit(30_000));
+        Assert.Equal(RunnerPin.ReviewedVersion, output.Trim());
+        var marker = ListenerMarker(System.IO.Path.GetDirectoryName(listener)!);
+        Assert.True(File.Exists(marker));
+        File.Delete(marker); // the positive control must not satisfy the later absence check
+    }
+
+    private static void WriteRunLayout(string root)
+    {
+        File.WriteAllText(System.IO.Path.Combine(root, "run.cmd"),
+            "@echo off\r\necho started> \"%~dp0run-started.marker\"\r\n");
+        File.WriteAllText(System.IO.Path.Combine(root, "run-helper.cmd.template"), "@echo off\r\n");
+    }
+
+    // A real Windows directory junction (mklink /J needs no elevation). Disposing removes only the link.
+    private static Junction CreateJunction(string link, string target)
+    {
+        var info = new ProcessStartInfo(System.IO.Path.Combine(Environment.SystemDirectory, "cmd.exe"))
+            { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true };
+        foreach (var argument in new[] { "/d", "/c", "mklink", "/J", link, target }) info.ArgumentList.Add(argument);
+        using var process = Process.Start(info)!;
+        process.StandardOutput.ReadToEnd();
+        Assert.True(process.WaitForExit(30_000));
+        Assert.True((File.GetAttributes(link) & FileAttributes.ReparsePoint) != 0, "junction fixture was not created");
+        return new Junction(link);
+    }
+
+    private sealed class Junction(string link) : IDisposable
+    {
+        public void Dispose() => Directory.Delete(link);
+    }
+
+    private static async Task WaitForFileAsync(string path)
+    {
+        for (var attempt = 0; attempt < 100 && !File.Exists(path); attempt++) await Task.Delay(100);
+        Assert.True(File.Exists(path), "ordinary run.cmd did not start");
+    }
+
+    private static string ListenerMarker(string directory) => System.IO.Path.Combine(directory, "listener-ran.marker");
+    private static string RunMarker(string root) => System.IO.Path.Combine(root, "run-started.marker");
+
+    private sealed class ScratchDirectory : IDisposable
+    {
+        public string Path { get; } = Directory.CreateDirectory(System.IO.Path.Combine(System.IO.Path.GetTempPath(),
+            "grl-junction-target-" + Guid.NewGuid().ToString("N"))).FullName;
+        public void Dispose() => Directory.Delete(Path, recursive: true);
     }
 
     private static PortableRecoveryStore PausedStore(FakeRoot root)

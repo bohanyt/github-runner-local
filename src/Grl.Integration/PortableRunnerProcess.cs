@@ -105,6 +105,38 @@ public static class RunnerBatchBoundary
             if ((File.GetAttributes(cursor) & FileAttributes.ReparsePoint) != 0) return false;
         return true;
     }
+
+    /// <summary>
+    /// Fail-closed: the root and its ancestors are ordinary, and EVERY component below the root down
+    /// to the file (e.g. <c>bin\Runner.Listener.exe</c>) exists as an ordinary, non-reparse directory
+    /// or file that stays under the root. A leaf-only check cannot see a junctioned directory.
+    /// </summary>
+    internal static bool OrdinaryDescendantFile(string root, string relativePath)
+    {
+        try
+        {
+            var fullRoot = Path.GetFullPath(root).TrimEnd('\\');
+            if (!Directory.Exists(fullRoot) || !OrdinaryAncestors(fullRoot)) return false;
+            var parts = relativePath.Split('\\');
+            if (parts.Any(part => part.Length == 0 || part is "." or ".." ||
+                    part.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0))
+                return false;
+            var cursor = fullRoot;
+            for (var i = 0; i < parts.Length; i++)
+            {
+                cursor = Path.Combine(cursor, parts[i]);
+                FileSystemInfo entry = i == parts.Length - 1 ? new FileInfo(cursor) : new DirectoryInfo(cursor);
+                if (!entry.Exists || entry.LinkTarget is not null ||
+                    (File.GetAttributes(cursor) & FileAttributes.ReparsePoint) != 0)
+                    return false;
+            }
+            return Path.GetFullPath(cursor).StartsWith(fullRoot + "\\", StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            return false;
+        }
+    }
 }
 
 public sealed class PortableRunnerProcess : IRunnerProcessAdapter
@@ -113,6 +145,7 @@ public sealed class PortableRunnerProcess : IRunnerProcessAdapter
     private readonly string cmd;
     private readonly Func<bool> elevated;
     private readonly bool resumeOnly;
+    private static readonly string[] RunStartComponents = ["run.cmd", "run-helper.cmd.template", @"bin\Runner.Listener.exe"];
 
     public PortableRunnerProcess(RunnerInstallResult installed, Func<bool>? isElevated = null)
     {
@@ -169,6 +202,13 @@ public sealed class PortableRunnerProcess : IRunnerProcessAdapter
         RefuseElevation();
         if (command.EntryPoint != "run.cmd" || command.Arguments.Count != 0)
             throw new RunnerProcessException(RunnerProcessFailure.UnsafeCommand, "Portable run entrypoint required.");
+        // run.cmd copies run-helper.cmd.template to run-helper.cmd and executes bin\Runner.Listener.exe.
+        // Immediately before start, none of these execution components may be redirected.
+        var helper = Path.Combine(root, "run-helper.cmd");
+        if (!RunStartComponents.All(x => RunnerBatchBoundary.OrdinaryDescendantFile(root, x)) ||
+            ((Path.Exists(helper) || new FileInfo(helper).LinkTarget is not null) &&
+                !RunnerBatchBoundary.OrdinaryDescendantFile(root, "run-helper.cmd")))
+            throw new RunnerProcessException(RunnerProcessFailure.InvalidRoot, "The verified runner entrypoint is unavailable.");
         var info = RunnerBatchBoundary.Build(root, command, cmd);
         RunnerBatchBoundary.SetRunEnvironment(info, verifiedVersion);
         var process = Start(info);
@@ -196,8 +236,8 @@ public sealed class PortableRunnerProcess : IRunnerProcessAdapter
     private ProcessStartInfo ListenerVersionProbe()
     {
         var listener = Path.Combine(root, "bin", "Runner.Listener.exe");
-        if (!Directory.Exists(root) || !RunnerBatchBoundary.OrdinaryAncestors(root) ||
-            !File.Exists(listener) || (File.GetAttributes(listener) & FileAttributes.ReparsePoint) != 0)
+        // The full execution path is checked before anything runs: root/ancestors, bin, and the leaf.
+        if (!RunnerBatchBoundary.OrdinaryDescendantFile(root, @"bin\Runner.Listener.exe"))
             throw new RunnerProcessException(RunnerProcessFailure.InvalidRoot, "The reviewed listener is unavailable.");
         var version = new ProcessStartInfo(listener)
         {
