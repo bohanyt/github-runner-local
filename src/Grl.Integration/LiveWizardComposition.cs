@@ -69,6 +69,7 @@ internal sealed class LiveWizardAdapters : IPreflightAdapter, IDeviceSignInAdapt
     private PortableRecoveryStore? recoveryStore;
     private PortableRecoveryEvidence? reopened;
     private readonly IRunnerAdministration? recoveryAdminOverride;
+    private readonly IRunnerProcessAdapter? recoveryProcessOverride;
     private readonly IAsyncDelay recoveryDelay;
 
     public LiveWizardAdapters(LiveRuntimeOptions options)
@@ -79,15 +80,15 @@ internal sealed class LiveWizardAdapters : IPreflightAdapter, IDeviceSignInAdapt
     }
 
     internal LiveWizardAdapters(LiveRuntimeOptions options, IRunnerAdministration recoveryAdmin,
-        PortableRecoveryStore recoveryStore, PortableRecoveryEvidence reopened, IAsyncDelay recoveryDelay)
+        PortableRecoveryStore? recoveryStore, PortableRecoveryEvidence? reopened, IAsyncDelay recoveryDelay,
+        IRunnerProcessAdapter? recoveryProcess = null)
         : this(options)
     {
         ArgumentNullException.ThrowIfNull(recoveryAdmin);
-        ArgumentNullException.ThrowIfNull(recoveryStore);
-        ArgumentNullException.ThrowIfNull(reopened);
         ArgumentNullException.ThrowIfNull(recoveryDelay);
         selected = recoveryAdmin.Repository;
         recoveryAdminOverride = recoveryAdmin;
+        recoveryProcessOverride = recoveryProcess;
         this.recoveryStore = recoveryStore;
         this.reopened = reopened;
         this.recoveryDelay = recoveryDelay;
@@ -182,15 +183,18 @@ internal sealed class LiveWizardAdapters : IPreflightAdapter, IDeviceSignInAdapt
             switch (state)
             {
                 case WizardState.InstallingDownloading:
-                    if (selected is null || access is null) return new AdapterResult(null, "INSTALL_DOWNLOAD_FAILED");
+                    if (selected is null) return new AdapterResult(null, "INSTALL_DOWNLOAD_FAILED");
                     var finalRoot = Path.Combine(options.OwnedRoot, "runner");
                     if (ExistingFinalRoot(finalRoot))
                     {
+                        // Local evidence only: nothing is downloaded, configured, started or adopted here.
                         recoveryStore ??= PortableRecoveryStore.Open(finalRoot, selected.FullName, options.RunnerName);
                         reopened = recoveryStore.Read();
                         return new AdapterResult(null, reopened is null ? "RECOVERY_STATE_UNAVAILABLE" :
-                            reopened.State == PortableRunnerState.Removed ? "RECOVERY_COMPLETED" : "RECOVERY_REQUIRED");
+                            reopened.State == PortableRunnerState.Removed ? "RECOVERY_COMPLETED" :
+                            PlannedPause(reopened) ? "RESUME_EXISTING_AVAILABLE" : "RECOVERY_REQUIRED");
                     }
+                    if (access is null) return new AdapterResult(null, "INSTALL_DOWNLOAD_FAILED");
                     var pin = RunnerPin.LoadReviewed(Path.Combine(AppContext.BaseDirectory, "runner-pins.json"));
                     installed = await new RunnerPackageInstaller().DownloadAndInstallAsync(
                         downloadHttp, pin, options.OwnedRoot, "runner", CancellationToken.None);
@@ -248,8 +252,8 @@ internal sealed class LiveWizardAdapters : IPreflightAdapter, IDeviceSignInAdapt
 
     public bool HasOwnedProcess => lifecycle?.HasOwnedProcess == true;
     public bool HasPendingRecovery => recoveryStore is not null &&
-        (lifecycle is { State: not PortableRunnerState.Removed } ||
-            reopened is { State: not PortableRunnerState.Removed });
+        (lifecycle is { IsRestored: false, State: not PortableRunnerState.Removed } ||
+            (lifecycle is null || lifecycle.IsRestored) && reopened is { State: not PortableRunnerState.Removed });
 
     public async Task DrainAsync()
     {
@@ -268,7 +272,65 @@ internal sealed class LiveWizardAdapters : IPreflightAdapter, IDeviceSignInAdapt
         {
             throw new AdapterOperationException("RUNNER_VERSION_UNSUPPORTED");
         }
+        catch (Exception error) when (lifecycle.IsRestored && error is not AdapterOperationException)
+        {
+            throw new AdapterOperationException(ResumeFailureCode(error));
+        }
     }
+
+    // Planned-pause resume after reopening: exact persisted repository/runner/root/ID, Paused, no
+    // possible survivor. Only the existing run.cmd is started; config.cmd, registration tokens and
+    // --replace are never used. An online process this window does not own is never adopted.
+    public bool CanResumeExisting => !HasOwnedProcess && recoveryStore is not null &&
+        (lifecycle is null ? reopened is not null && PlannedPause(reopened)
+            : lifecycle is { IsRestored: true, State: PortableRunnerState.Paused });
+
+    public async Task<AdapterResult> ResumeExistingAsync()
+    {
+        if (!CanResumeExisting || selected is null || recoveryStore is null ||
+            (access is null && recoveryAdminOverride is null))
+            return new AdapterResult(null, "RESUME_STATE_INELIGIBLE");
+        try
+        {
+            if (lifecycle is null)
+            {
+                var evidence = recoveryStore.Read();
+                if (evidence is null || evidence != reopened)
+                    return new AdapterResult(null, "RECOVERY_STATE_UNAVAILABLE");
+                var admin = recoveryAdminOverride ?? new GitHubRunnerAdministration(apiHttp, access!, selected);
+                var existing = recoveryProcessOverride ??
+                    PortableRunnerProcess.ForExistingRoot(Path.Combine(options.OwnedRoot, "runner"));
+                lifecycle = PortableRunnerLifecycle.RestorePlannedPause(admin, existing, options.RunnerName,
+                    "grl-exec", recoveryStore, evidence, recoveryDelay);
+            }
+            // The lifecycle records Online only after observing the exact persisted ID online.
+            await lifecycle.ResumeAsync(20, TimeSpan.FromSeconds(3), CancellationToken.None);
+            return lifecycle.State == PortableRunnerState.Online
+                ? new AdapterResult(WizardEvent.Online) : new AdapterResult(null, "RESUME_ONLINE_TIMEOUT");
+        }
+        catch (Exception error)
+        {
+            return new AdapterResult(null, ResumeFailureCode(error));
+        }
+    }
+
+    private static string ResumeFailureCode(Exception error) => error switch
+    {
+        PortableRunnerException { Failure: PortableRunnerFailure.UnsupportedVersion } => "RUNNER_VERSION_UNSUPPORTED",
+        PortableRunnerException { Failure: PortableRunnerFailure.RemoteRunnerActive } => "RESUME_RUNNER_ACTIVE",
+        PortableRunnerException { Failure: PortableRunnerFailure.PossibleSurvivingProcess } => "DISCONNECT_PROCESS_UNCERTAIN",
+        PortableRunnerException { Failure: PortableRunnerFailure.IdentityUncertain } => "RESUME_IDENTITY_BLOCKED",
+        PortableRunnerException { Failure: PortableRunnerFailure.RemoteUnavailable } => "RESUME_REMOTE_UNAVAILABLE",
+        PortableRunnerException { Failure: PortableRunnerFailure.OnlineTimeout } => "RESUME_ONLINE_TIMEOUT",
+        PortableRunnerException { Failure: PortableRunnerFailure.InvalidState } => "RESUME_STATE_INELIGIBLE",
+        RunnerProcessException { Failure: RunnerProcessFailure.Elevated } => "PREFLIGHT_BLOCKED",
+        RunnerProcessException => "RESUME_START_FAILED",
+        InvalidOperationException or IOException or UnauthorizedAccessException => "RECOVERY_STATE_UNAVAILABLE",
+        _ => "RUNNER_DEGRADED"
+    };
+
+    private static bool PlannedPause(PortableRecoveryEvidence evidence) =>
+        evidence is { State: PortableRunnerState.Paused, RunnerId: > 0, MayHaveUnownedProcess: false };
 
     public async Task StopNowAsync()
     {
@@ -304,14 +366,17 @@ internal sealed class LiveWizardAdapters : IPreflightAdapter, IDeviceSignInAdapt
 
         try
         {
-            if (lifecycle is not null)
+            if (lifecycle is { IsRestored: false })
             {
                 await lifecycle.UnregisterAsync(120, TimeSpan.FromSeconds(5), CancellationToken.None);
                 return lifecycle.State == PortableRunnerState.Removed
                     ? WizardEvent.RemoteRemoved : WizardEvent.RemoteUnavailable;
             }
+            // A lifecycle restored from a planned pause removes only through the same exact-ID
+            // reopened-evidence path below, using the evidence it has persisted since.
+            if (lifecycle is not null) reopened = recoveryStore.Read();
 
-            // Reopen is recovery-only: no process is adopted and no local CLI is executed.
+            // Reopen removal executes no local CLI and adopts no process.
             if (reopened is null)
                 throw new AdapterOperationException("DISCONNECT_IDENTITY_BLOCKED");
             if (reopened.MayHaveUnownedProcess)

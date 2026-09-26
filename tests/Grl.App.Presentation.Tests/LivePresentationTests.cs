@@ -201,6 +201,77 @@ public sealed class LivePresentationTests
         Assert.Empty(session.DeviceCodeText);
     }
 
+    [Fact]
+    public async Task ReopenedPlannedPauseOffersResumeExistingAfterRepoConfirmation()
+    {
+        var adapter = new SafeLiveFake { PendingRecovery = true, ResumeExistingAvailable = true,
+            InstallErrorState = WizardState.InstallingDownloading, InstallErrorCode = "RESUME_EXISTING_AVAILABLE" };
+        var session = NewLive(adapter);
+        session.Acknowledged = true;
+        await session.ContinueFromWelcomeAsync();
+        await session.ExecuteUserCommandAsync(WizardEvent.Continue);
+        Assert.False(session.CanResumeExisting); // not before account and repository confirmation
+        session.AccountConfirmed = true;
+        await session.ExecuteUserCommandAsync(WizardEvent.Continue);
+        session.TargetConfirmed = true;
+        await session.ExecuteUserCommandAsync(WizardEvent.Continue);
+        await session.ExecuteUserCommandAsync(WizardEvent.Continue);
+
+        Assert.Equal(WizardState.InstallingDownloading, session.State);
+        Assert.Equal("RESUME_EXISTING_AVAILABLE", session.ActiveError?.Code);
+        Assert.True(session.CanResumeExisting);
+        Assert.Equal("Resume existing runner registration", session.Actions[0].AutomationName);
+        Assert.True(session.Actions[0].IsPrimary);
+        Assert.True(session.ResumeExistingCommand.CanExecute(null));
+
+        await session.ResumeExistingAsync();
+
+        Assert.Equal(WizardState.RunnerIdle, session.State);
+        Assert.Null(session.ActiveError);
+        Assert.Contains("No new registration", session.StatusText);
+        Assert.Equal(1, adapter.ResumeExistingCount);
+        Assert.Equal([WizardState.InstallingDownloading], adapter.InstallStates);
+        Assert.Equal(0, adapter.StartCount);
+    }
+
+    [Fact]
+    public async Task ResumeExistingConcurrentClickCallsAdapterOnce()
+    {
+        var gate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var adapter = new SafeLiveFake { ResumeExistingAvailable = true, ResumeExistingGate = gate };
+        var session = NewLive(adapter, WizardState.InstallingDownloading);
+
+        var first = session.ResumeExistingAsync();
+        Assert.False(session.CanResumeExisting);
+        await session.ResumeExistingAsync();
+        Assert.Equal("INVALID_TRANSITION", session.ActiveError?.Code);
+        gate.SetResult(true);
+        await first;
+
+        Assert.Equal(1, adapter.ResumeExistingCount);
+        Assert.Equal(WizardState.RunnerIdle, session.State);
+    }
+
+    [Theory]
+    [InlineData("RESUME_RUNNER_ACTIVE", false, WizardState.InstallingDownloading)]
+    [InlineData("RESUME_IDENTITY_BLOCKED", false, WizardState.InstallingDownloading)]
+    [InlineData("RUNNER_VERSION_UNSUPPORTED", false, WizardState.InstallingDownloading)]
+    [InlineData("RESUME_ONLINE_TIMEOUT", true, WizardState.RunnerDegraded)]
+    public async Task ResumeExistingFailureIsTruthfulAndNeverAdvancesToOnline(string code, bool owned, WizardState expected)
+    {
+        var adapter = new SafeLiveFake { ResumeExistingAvailable = true, ResumeExistingErrorCode = code,
+            OwnedAfterResumeExisting = owned };
+        var session = NewLive(adapter, WizardState.InstallingDownloading);
+
+        await session.ResumeExistingAsync();
+
+        Assert.Equal(expected, session.State);
+        Assert.Equal(code, session.ActiveError?.Code);
+        Assert.NotEqual("LIVE action stopped", session.ErrorTitle); // every resume code has specific guidance
+        Assert.Equal(owned, session.StopNowCommand.CanExecute(null));
+        Assert.Equal(!owned, session.CanResumeExisting);
+    }
+
     private static WizardSession NewLive(SafeLiveFake adapter, WizardState? initial = null) =>
         new(new ScenarioSelection(FakeScenario.HappyPath, string.Empty), new FakeClock(),
             new PreviewDelay(TimeSpan.Zero),
@@ -270,6 +341,20 @@ public sealed class LivePresentationTests
             return Task.CompletedTask;
         }
         public Task StopNowAsync() { StopCount++; Owned = false; return Task.CompletedTask; }
+        public bool ResumeExistingAvailable { get; set; }
+        public string? ResumeExistingErrorCode { get; set; }
+        public bool OwnedAfterResumeExisting { get; set; }
+        public TaskCompletionSource<bool>? ResumeExistingGate { get; set; }
+        public int ResumeExistingCount { get; private set; }
+        public bool CanResumeExisting => ResumeExistingAvailable && !Owned;
+        public async Task<AdapterResult> ResumeExistingAsync()
+        {
+            ResumeExistingCount++;
+            if (ResumeExistingGate is not null) await ResumeExistingGate.Task;
+            Owned = ResumeExistingErrorCode is null || OwnedAfterResumeExisting;
+            return ResumeExistingErrorCode is null
+                ? new AdapterResult(WizardEvent.Online) : new AdapterResult(null, ResumeExistingErrorCode);
+        }
         public Task<AdapterResult> RefreshAsync(WizardState state) => Task.FromResult(new AdapterResult(RefreshEvent));
         public Task<WizardEvent> RemoveAsync()
         {

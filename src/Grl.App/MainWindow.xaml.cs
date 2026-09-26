@@ -42,6 +42,11 @@ public partial class MainWindow : Window
             MessageBox.Show("LIVE setup has not reached a safe closing point. Registration state may still be unresolved. Use the in-app recovery path when available, or leave the runner root untouched for inspection.",
                 "LIVE setup incomplete", MessageBoxButton.OK, MessageBoxImage.Information);
         }
+        else if (DataContext is WizardSession { IsLive: true, HasPendingRecovery: true, State: WizardState.RunnerPaused })
+        {
+            MessageBox.Show("The runner was stopped with Stop Now and its registration is kept. Reopen the app with the same root, sign in, confirm the repository, and choose Resume existing runner.",
+                "LIVE runner paused", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
         else if (DataContext is WizardSession { IsLive: true, HasPendingRecovery: true, State: not WizardState.DisconnectDone })
         {
             MessageBox.Show("Registration or removal may remain pending. Closing this window does not clean it up; reopen the same root for exact-identity recovery. A process from an earlier app session may still be running.",
