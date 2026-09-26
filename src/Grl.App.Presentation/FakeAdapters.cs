@@ -65,6 +65,9 @@ public interface IRunnerControllerAdapter
     Task ResumeAsync();
     Task StopNowAsync();
     Task<AdapterResult> RefreshAsync(WizardState state);
+    /// <summary>A planned pause from an earlier app session can be resumed with its existing registration.</summary>
+    bool CanResumeExisting => false;
+    Task<AdapterResult> ResumeExistingAsync() => Task.FromResult(new AdapterResult(null, "INVALID_TRANSITION"));
 }
 
 public interface IDisconnectAdapter

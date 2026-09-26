@@ -21,6 +21,8 @@ public interface IRunnerProcessAdapter
 {
     Task ExecuteAsync(RunnerCommand command, CancellationToken ct);
     Task<IRunnerCli> VerifyCliAsync(CancellationToken ct);
+    /// <summary>Read-only listener version probe; never invokes config.cmd.</summary>
+    Task<IRunnerCli> VerifyListenerVersionAsync(CancellationToken ct);
     Task<IOwnedRunnerProcess> StartAsync(RunnerCommand command, string verifiedVersion, CancellationToken ct);
 }
 
@@ -97,7 +99,7 @@ public static class RunnerBatchBoundary
     private static bool Simple(string value) =>
         value.Length is >= 1 and <= 128 && value.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_' or '.');
 
-    private static bool OrdinaryAncestors(string root)
+    internal static bool OrdinaryAncestors(string root)
     {
         for (var cursor = root; cursor is not null; cursor = Directory.GetParent(cursor)?.FullName)
             if ((File.GetAttributes(cursor) & FileAttributes.ReparsePoint) != 0) return false;
@@ -110,6 +112,7 @@ public sealed class PortableRunnerProcess : IRunnerProcessAdapter
     private readonly string root;
     private readonly string cmd;
     private readonly Func<bool> elevated;
+    private readonly bool resumeOnly;
 
     public PortableRunnerProcess(RunnerInstallResult installed, Func<bool>? isElevated = null)
     {
@@ -120,10 +123,30 @@ public sealed class PortableRunnerProcess : IRunnerProcessAdapter
         elevated = isElevated ?? IsElevated;
     }
 
+    private PortableRunnerProcess(string existingRoot, Func<bool>? isElevated)
+    {
+        root = Path.GetFullPath(existingRoot);
+        cmd = Path.Combine(Environment.SystemDirectory, "cmd.exe");
+        elevated = isElevated ?? IsElevated;
+        resumeOnly = true;
+    }
+
+    /// <summary>
+    /// An already-configured root from an earlier app session. No package hash is claimed:
+    /// only the listener version probe and the existing run.cmd are available, never config.cmd.
+    /// </summary>
+    public static PortableRunnerProcess ForExistingRoot(string existingRoot, Func<bool>? isElevated = null)
+    {
+        if (!Path.IsPathFullyQualified(existingRoot))
+            throw new RunnerProcessException(RunnerProcessFailure.InvalidRoot, "The existing runner root is unavailable.");
+        return new PortableRunnerProcess(existingRoot, isElevated);
+    }
+
     public async Task ExecuteAsync(RunnerCommand command, CancellationToken ct)
     {
         RefuseElevation();
-        if (command.EntryPoint != "config.cmd") throw new RunnerProcessException(RunnerProcessFailure.UnsafeCommand, "Configuration entrypoint required.");
+        if (resumeOnly || command.EntryPoint != "config.cmd")
+            throw new RunnerProcessException(RunnerProcessFailure.UnsafeCommand, "Configuration entrypoint required.");
         using var process = Start(command);
         using var limit = CancellationTokenSource.CreateLinkedTokenSource(ct);
         limit.CancelAfter(TimeSpan.FromMinutes(5));
@@ -155,8 +178,26 @@ public sealed class PortableRunnerProcess : IRunnerProcessAdapter
     public async Task<IRunnerCli> VerifyCliAsync(CancellationToken ct)
     {
         RefuseElevation();
+        if (resumeOnly)
+            throw new RunnerProcessException(RunnerProcessFailure.UnsafeCommand, "A reopened root verifies its listener version only.");
+        var version = ListenerVersionProbe();
+        var help = RunnerBatchBoundary.Build(root, new RunnerCommand("config.cmd", ["--help"]), cmd);
+        var versionOutput = await ProbeAsync(version, ct);
+        var helpOutput = await ProbeAsync(help, ct);
+        return RunnerCliContract.Verify(versionOutput, helpOutput);
+    }
+
+    public async Task<IRunnerCli> VerifyListenerVersionAsync(CancellationToken ct)
+    {
+        RefuseElevation();
+        return RunnerCliContract.VerifyRunOnly(await ProbeAsync(ListenerVersionProbe(), ct));
+    }
+
+    private ProcessStartInfo ListenerVersionProbe()
+    {
         var listener = Path.Combine(root, "bin", "Runner.Listener.exe");
-        if (!File.Exists(listener) || (File.GetAttributes(listener) & FileAttributes.ReparsePoint) != 0)
+        if (!Directory.Exists(root) || !RunnerBatchBoundary.OrdinaryAncestors(root) ||
+            !File.Exists(listener) || (File.GetAttributes(listener) & FileAttributes.ReparsePoint) != 0)
             throw new RunnerProcessException(RunnerProcessFailure.InvalidRoot, "The reviewed listener is unavailable.");
         var version = new ProcessStartInfo(listener)
         {
@@ -164,10 +205,7 @@ public sealed class PortableRunnerProcess : IRunnerProcessAdapter
             RedirectStandardOutput = true, RedirectStandardError = true
         };
         version.ArgumentList.Add("--version");
-        var help = RunnerBatchBoundary.Build(root, new RunnerCommand("config.cmd", ["--help"]), cmd);
-        var versionOutput = await ProbeAsync(version, ct);
-        var helpOutput = await ProbeAsync(help, ct);
-        return RunnerCliContract.Verify(versionOutput, helpOutput);
+        return version;
     }
 
     private static async Task<string> ProbeAsync(ProcessStartInfo info, CancellationToken ct)

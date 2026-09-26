@@ -50,6 +50,8 @@ public sealed class WizardSession : INotifyPropertyChanged
     private readonly AsyncUiCommand _removalCommand;
     private readonly AsyncUiCommand _stopNowCommand;
     private readonly AsyncUiCommand _recoveryCommand;
+    private readonly AsyncUiCommand _resumeExistingCommand;
+    private bool _resumingExisting;
     private bool _acknowledged;
     private bool _isWelcome;
     private bool _accountConfirmed;
@@ -91,6 +93,8 @@ public sealed class WizardSession : INotifyPropertyChanged
             ShowUnexpectedError);
         _recoveryCommand = new AsyncUiCommand(RecoverAsync,
             () => CanRecover, ShowUnexpectedError);
+        _resumeExistingCommand = new AsyncUiCommand(ResumeExistingAsync,
+            () => CanResumeExisting, ShowUnexpectedError);
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -108,10 +112,17 @@ public sealed class WizardSession : INotifyPropertyChanged
     public bool CanRecover => HasPendingRecovery && !HasOwnedRunnerProcess && !IsWelcome &&
         (State is WizardState.InstallingDownloading or WizardState.InstallingConfiguring or
             WizardState.RunnerDegraded or WizardState.RunnerPaused or WizardState.DisconnectRemotePending);
+    // Offered after sign-in and exact repository confirmation, when an earlier session left a
+    // planned pause. RunnerPaused keeps its ordinary Resume command instead of a duplicate action.
+    public bool CanResumeExisting => _live && !IsWelcome && !_resumingExisting && !HasOwnedRunnerProcess &&
+        State is WizardState.InstallingDownloading or WizardState.RunnerDegraded &&
+        _adapters.RunnerController.CanResumeExisting;
     public string RunnerPresenceText => !_live ? string.Empty : HasOwnedRunnerProcess
         ? "A product-owned runner process is active. Safe Pause is unavailable. Stop Now may cancel an active or newly assigned job."
         : State == WizardState.DisconnectDone
             ? "Exact remote removal was verified in this session. The local root remains for inspection."
+        : CanResumeExisting
+            ? "An earlier app session left this exact runner paused with Stop Now. Resume existing runner checks the same stored runner ID is offline and idle, re-verifies the runner version, and starts only its existing configuration. It never registers again."
         : HasPendingRecovery
             ? "No runner process is owned by this window. Registration or a process from an earlier app session may remain. Recovery requires a stored numeric runner ID; otherwise inspect repository Settings > Actions > Runners manually."
             : "Safe Pause is unavailable. Closing or crashing the app does not guarantee that a runner process stops.";
@@ -154,6 +165,7 @@ public sealed class WizardSession : INotifyPropertyChanged
     public ICommand PreviewRemovalCommand => _removalCommand;
     public ICommand StopNowCommand => _stopNowCommand;
     public ICommand RecoveryCommand => _recoveryCommand;
+    public ICommand ResumeExistingCommand => _resumeExistingCommand;
 
     public bool Acknowledged
     {
@@ -284,6 +296,33 @@ public sealed class WizardSession : INotifyPropertyChanged
             SetError(error.ErrorCode);
         }
         catch { SetError("DISCONNECT_REMOTE_UNAVAILABLE"); }
+    }
+
+    public async Task ResumeExistingAsync()
+    {
+        if (!CanResumeExisting) { SetError("INVALID_TRANSITION"); return; }
+        _resumingExisting = true;
+        NotifyAll();
+        try
+        {
+            var result = await _adapters.RunnerController.ResumeExistingAsync();
+            if (result.Event == WizardEvent.Online)
+            {
+                // Resume of an earlier session's registration is outside the frozen Core table.
+                _machine = new WizardStateMachine(_clock, WizardState.RunnerIdle);
+                _activeError = null;
+                _statusText = "Existing runner resumed with its stored runner ID. No new registration was made.";
+                return;
+            }
+            if (HasOwnedRunnerProcess) _machine = new WizardStateMachine(_clock, WizardState.RunnerDegraded);
+            SetError(result.ErrorCode ?? "RUNNER_DEGRADED");
+        }
+        catch { SetError("RUNNER_DEGRADED"); }
+        finally
+        {
+            _resumingExisting = false;
+            NotifyAll();
+        }
     }
 
     public async Task RefreshRunnerStatusAsync()
@@ -488,6 +527,9 @@ public sealed class WizardSession : INotifyPropertyChanged
                 () => !_isWelcome && EnabledUserCommands.Contains(action), ShowUnexpectedError),
             IsPrimary: action == primary && action != WizardEvent.Cancel,
             IsCancel: action == WizardEvent.Cancel)).ToList();
+        if (CanResumeExisting)
+            actions.Insert(0, new UiAction("_Resume existing runner", "Resume existing runner registration",
+                _resumeExistingCommand, IsPrimary: true));
         if (CanRecover)
             actions.Add(new UiAction("_Recover / remove exact runner", "Recover exact runner registration",
                 _recoveryCommand));
@@ -549,7 +591,7 @@ public sealed class WizardSession : INotifyPropertyChanged
         {
             nameof(IsWelcome), nameof(IsInWizard), nameof(State), nameof(CurrentPage),
             nameof(IsLive), nameof(IsPreview), nameof(HasOwnedRunnerProcess), nameof(WelcomeContinueLabel),
-            nameof(HasPendingRecovery), nameof(CanRecover), nameof(RunnerPresenceText),
+            nameof(HasPendingRecovery), nameof(CanRecover), nameof(CanResumeExisting), nameof(RunnerPresenceText),
             nameof(ShowAccountConfirmation), nameof(ShowTargetConfirmation),
             nameof(AccountConfirmed), nameof(TargetConfirmed),
             nameof(Journal), nameof(StatusText), nameof(DeviceCodeText), nameof(SignedInAccountText), nameof(PreflightReasonText),
@@ -563,6 +605,7 @@ public sealed class WizardSession : INotifyPropertyChanged
         _removalCommand.Refresh();
         _stopNowCommand.Refresh();
         _recoveryCommand.Refresh();
+        _resumeExistingCommand.Refresh();
     }
 
     private void Changed(string name) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));

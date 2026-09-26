@@ -69,6 +69,18 @@ public sealed class RunnerCliContract : IRunnerCli
 
     public static IReadOnlyList<string> RequiredHelpOptions => RequiredOptions;
 
+    /// <summary>
+    /// Version-only verification for resuming an already-configured root. It needs no
+    /// config.cmd probe, and the returned CLI can build only the existing run.cmd.
+    /// </summary>
+    public static IRunnerCli VerifyRunOnly(string listenerVersionOutput)
+    {
+        var version = listenerVersionOutput.Trim().TrimStart('v');
+        if (version != RunnerPin.ReviewedVersion)
+            throw new RunnerCliException(RunnerCliFailure.UnsupportedVersion, "Runner version is unsupported; update the wizard.");
+        return new RunOnlyRunnerCli(new RunnerCapabilities(version, new HashSet<string>(StringComparer.Ordinal)));
+    }
+
     public RunnerCommand BuildConfigure(RunnerConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(configuration);
@@ -105,4 +117,16 @@ public sealed class RunnerCliContract : IRunnerCli
     private static bool Simple(string value) =>
         !string.IsNullOrWhiteSpace(value) && value.Length <= 128 &&
         value.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_' or '.');
+
+    private sealed class RunOnlyRunnerCli(RunnerCapabilities capabilities) : IRunnerCli
+    {
+        public RunnerCapabilities Capabilities { get; } = capabilities;
+        public RunnerCommand BuildConfigure(RunnerConfiguration configuration) =>
+            throw new RunnerCliException(RunnerCliFailure.InvalidArgument,
+                "A reopened runner resumes with its existing configuration only.");
+        public RunnerCommand BuildRemove(string removalToken) =>
+            throw new RunnerCliException(RunnerCliFailure.InvalidArgument,
+                "A reopened runner resumes with its existing configuration only.");
+        public RunnerCommand BuildRun() => new("run.cmd", Array.Empty<string>());
+    }
 }

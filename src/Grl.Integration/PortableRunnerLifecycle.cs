@@ -14,7 +14,8 @@ public sealed record PortableRunnerJournalEntry(DateTimeOffset At, PortableRunne
 public enum PortableRunnerFailure
 {
     NameCollision, OnlineTimeout, DrainUnavailable, ActiveProcess, IdentityUncertain,
-    RemoteUnavailable, PossibleSurvivingProcess, UnsupportedVersion, NoOwnedProcess, InvalidState
+    RemoteUnavailable, PossibleSurvivingProcess, UnsupportedVersion, NoOwnedProcess, InvalidState,
+    RemoteRunnerActive
 }
 
 public sealed class PortableRunnerException(PortableRunnerFailure failure, string message) : Exception(message)
@@ -25,7 +26,7 @@ public sealed class PortableRunnerException(PortableRunnerFailure failure, strin
 public sealed class PortableRunnerLifecycle : IDisposable
 {
     private readonly IRunnerAdministration admin;
-    private readonly IRunnerCli cli;
+    private readonly IRunnerCli? cli; // null only for a restored, resume-only lifecycle
     private readonly IRunnerProcessAdapter process;
     private readonly IAsyncDelay delay;
     private readonly TimeProvider clock;
@@ -38,18 +39,56 @@ public sealed class PortableRunnerLifecycle : IDisposable
     private long? runnerId;
     private bool registrationMayExist;
     private bool processMaySurvive;
+    private bool restored;
+    private int resuming;
 
     public PortableRunnerLifecycle(IRunnerAdministration admin, IRunnerCli cli, IRunnerProcessAdapter process,
         string name, string label, IAsyncDelay? delay = null, TimeProvider? clock = null,
         Func<bool>? isElevated = null, PortableRecoveryStore? recovery = null)
+        : this(admin, process, name, label, delay, clock, isElevated, recovery)
+    {
+        ArgumentNullException.ThrowIfNull(cli);
+        this.cli = cli;
+    }
+
+    /// <summary>
+    /// Restores ONLY a planned pause from an earlier app session: persisted Paused state, a bound
+    /// numeric runner ID and no possibly surviving process. The restored lifecycle can only resume
+    /// the existing run.cmd; it never configures, re-registers or removes through the CLI.
+    /// Construction reads evidence but mutates nothing.
+    /// </summary>
+    public static PortableRunnerLifecycle RestorePlannedPause(IRunnerAdministration admin,
+        IRunnerProcessAdapter process, string name, string label, PortableRecoveryStore recovery,
+        PortableRecoveryEvidence evidence, IAsyncDelay? delay = null, TimeProvider? clock = null,
+        Func<bool>? isElevated = null)
+    {
+        ArgumentNullException.ThrowIfNull(recovery);
+        ArgumentNullException.ThrowIfNull(evidence);
+        RequirePlannedPause(evidence);
+        var lifecycle = new PortableRunnerLifecycle(admin, process, name, label, delay, clock, isElevated, recovery);
+        if (evidence.Repository != admin.Repository.FullName || evidence.RunnerName != name)
+            throw new PortableRunnerException(PortableRunnerFailure.IdentityUncertain,
+                "Recovery evidence names a different repository or runner.");
+        if (recovery.Read() != evidence)
+            throw new PortableRunnerException(PortableRunnerFailure.InvalidState,
+                "Recovery evidence changed after it was read.");
+        lifecycle.restored = true;
+        lifecycle.registrationMayExist = true;
+        lifecycle.runnerId = evidence.RunnerId;
+        lifecycle.State = PortableRunnerState.Paused;
+        lifecycle.Note("Planned pause restored from recovery evidence; no process is owned and nothing was started.");
+        return lifecycle;
+    }
+
+    private PortableRunnerLifecycle(IRunnerAdministration admin, IRunnerProcessAdapter process,
+        string name, string label, IAsyncDelay? delay, TimeProvider? clock,
+        Func<bool>? isElevated, PortableRecoveryStore? recovery)
     {
         ArgumentNullException.ThrowIfNull(admin);
-        ArgumentNullException.ThrowIfNull(cli);
         ArgumentNullException.ThrowIfNull(process);
         if (!Simple(name) || !Simple(label) || !admin.Repository.IsPrivate || !admin.Repository.HasAdminPermission)
             throw new ArgumentException("A private administration target and simple runner identity are required.");
         this.admin = admin;
-        this.cli = cli;
         this.process = process;
         this.name = name;
         this.label = label;
@@ -63,13 +102,15 @@ public sealed class PortableRunnerLifecycle : IDisposable
     public IReadOnlyList<PortableRunnerJournalEntry> Journal => journal.AsReadOnly();
     public bool HasOwnedProcess => owned is { HasExited: false };
     public long? RunnerId => runnerId;
+    /// <summary>True when restored from a planned pause of an earlier app session (resume-only).</summary>
+    public bool IsRestored => restored;
     public string RunnerName => name;
     public GitHubRepository Repository => admin.Repository;
 
     public async Task RegisterAndStartAsync(int maxPolls, TimeSpan pollInterval, CancellationToken ct)
     {
         RefuseElevation();
-        if (State != PortableRunnerState.Ready || maxPolls is < 1 or > 120 || !ValidInterval(pollInterval))
+        if (State != PortableRunnerState.Ready || cli is null || maxPolls is < 1 or > 120 || !ValidInterval(pollInterval))
             throw new PortableRunnerException(PortableRunnerFailure.InvalidState, "Registration parameters or state are invalid.");
         var existing = await admin.ListAsync(ct);
         if (existing.Any(x => x.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
@@ -159,11 +200,21 @@ public sealed class PortableRunnerLifecycle : IDisposable
     public async Task ResumeAsync(int maxPolls, TimeSpan interval, CancellationToken ct)
     {
         RefuseElevation();
+        // A concurrent or repeated Resume can never start a second process.
+        if (Interlocked.Exchange(ref resuming, 1) == 1)
+            throw new PortableRunnerException(PortableRunnerFailure.InvalidState, "A resume is already in progress.");
+        try { await ResumeCoreAsync(maxPolls, interval, ct); }
+        finally { Volatile.Write(ref resuming, 0); }
+    }
+
+    private async Task ResumeCoreAsync(int maxPolls, TimeSpan interval, CancellationToken ct)
+    {
         ReleaseExited();
         if (State != PortableRunnerState.Paused || owned is not null || runnerId is null ||
             maxPolls is < 1 or > 120 || !ValidInterval(interval))
             throw new PortableRunnerException(PortableRunnerFailure.InvalidState,
                 "Resume state or polling bound is invalid.");
+        if (restored) await RequireRestoredResumableAsync(ct);
 
         IRunnerCli verifiedCli;
         try
@@ -208,13 +259,66 @@ public sealed class PortableRunnerLifecycle : IDisposable
             if (owned is null && error is RunnerProcessException { Failure: RunnerProcessFailure.StartupFailed })
                 processMaySurvive = false;
             ReleaseExited();
-            Record(PortableRunnerState.Degraded, HasOwnedProcess
-                ? "Resume uncertain; owned process remains active. Explicit Stop Now may cancel work."
-                : processMaySurvive
-                    ? "Resume incomplete; a process may survive and remote registration remains pending."
-                    : "Resume did not start a process; remote registration remains.");
+            if (!HasOwnedProcess && !processMaySurvive)
+                Record(PortableRunnerState.Paused,
+                    "Resume did not leave a running process; the registration remains paused and resume may be retried.");
+            else
+                Record(PortableRunnerState.Degraded, HasOwnedProcess
+                    ? "Resume uncertain; owned process remains active. Explicit Stop Now may cancel work."
+                    : "Resume incomplete; a process may survive and remote registration remains pending.");
             throw;
         }
+    }
+
+    // Before any local process starts for a restored pause: the persisted evidence is still the
+    // exact planned pause, and GitHub lists exactly one runner with this name, carrying the
+    // persisted numeric ID, offline and not busy. Every refusal here mutates nothing.
+    private async Task RequireRestoredResumableAsync(CancellationToken ct)
+    {
+        var persisted = recovery!.Read() ?? throw new PortableRunnerException(
+            PortableRunnerFailure.InvalidState, "Recovery evidence is missing.");
+        RequirePlannedPause(persisted);
+        if (persisted.RunnerId != runnerId || persisted.Repository != admin.Repository.FullName ||
+            persisted.RunnerName != name)
+            throw new PortableRunnerException(PortableRunnerFailure.IdentityUncertain,
+                "Recovery evidence no longer matches the restored runner.");
+
+        IReadOnlyList<RepositoryRunner> listed;
+        try { listed = await admin.ListAsync(ct); }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception)
+        {
+            Note("GitHub runner status could not be read; nothing was started.");
+            throw new PortableRunnerException(PortableRunnerFailure.RemoteUnavailable,
+                "GitHub runner status could not be read; nothing was started.");
+        }
+
+        var sameName = listed.Where(x => x.Name.Equals(name, StringComparison.OrdinalIgnoreCase)).ToArray();
+        if (sameName.Length != 1 || sameName[0].Id != runnerId || listed.Count(x => x.Id == runnerId) != 1)
+        {
+            Note("The exact persisted runner ID and name are not uniquely registered; nothing was started.");
+            throw new PortableRunnerException(PortableRunnerFailure.IdentityUncertain,
+                "The exact persisted runner ID and name are not uniquely registered.");
+        }
+        if (sameName[0].Online || sameName[0].Busy)
+        {
+            Note("The exact runner is online or busy; an unowned process may be active and is not adopted. Nothing was started.");
+            throw new PortableRunnerException(PortableRunnerFailure.RemoteRunnerActive,
+                "The exact runner is online or busy; an unowned process may be active.");
+        }
+    }
+
+    private static void RequirePlannedPause(PortableRecoveryEvidence evidence)
+    {
+        if (evidence.MayHaveUnownedProcess)
+            throw new PortableRunnerException(PortableRunnerFailure.PossibleSurvivingProcess,
+                "A runner process from an earlier app session may still exist; it is not adopted.");
+        if (evidence.State != PortableRunnerState.Paused)
+            throw new PortableRunnerException(PortableRunnerFailure.InvalidState,
+                "Only an explicitly paused runner can be resumed after reopening.");
+        if (evidence.RunnerId is not > 0)
+            throw new PortableRunnerException(PortableRunnerFailure.IdentityUncertain,
+                "No numeric runner ID was persisted.");
     }
 
     public async Task UnregisterAsync(int maxPolls, TimeSpan interval, CancellationToken ct)
@@ -227,6 +331,9 @@ public sealed class PortableRunnerLifecycle : IDisposable
         if (processMaySurvive)
             throw new PortableRunnerException(PortableRunnerFailure.PossibleSurvivingProcess,
                 "A runner process may survive without current ownership. Retrying removal cannot make that evidence safe.");
+        if (restored || cli is null)
+            throw new PortableRunnerException(PortableRunnerFailure.InvalidState,
+                "A reopened runner is resume-only; removal uses exact-ID recovery evidence.");
         if (maxPolls is < 1 or > 120 || !ValidInterval(interval))
             throw new PortableRunnerException(PortableRunnerFailure.InvalidState, "Removal polling bound is invalid.");
         if (State is PortableRunnerState.Ready or PortableRunnerState.Removed)
@@ -357,7 +464,10 @@ public sealed class PortableRunnerLifecycle : IDisposable
     {
         try
         {
-            var verified = await process.VerifyCliAsync(ct);
+            // A restored root is verified by its listener version only; it never probes config.cmd.
+            var verified = restored
+                ? await process.VerifyListenerVersionAsync(ct)
+                : await process.VerifyCliAsync(ct);
             if (verified.Capabilities.Version != RunnerPin.ReviewedVersion)
                 throw new PortableRunnerException(PortableRunnerFailure.UnsupportedVersion,
                     $"Runner self-update/version drift detected. This wizard supports only {RunnerPin.ReviewedVersion}.");
@@ -399,9 +509,15 @@ public sealed class PortableRunnerLifecycle : IDisposable
     private void Record(PortableRunnerState state, string evidence)
     {
         State = state;
-        journal.Add(new PortableRunnerJournalEntry(clock.GetUtcNow(), state, evidence));
-        if (journal.Count > 100) journal.RemoveAt(0);
+        Note(evidence);
         recovery?.Write(runnerId, state, processMaySurvive);
+    }
+
+    // Journal-only: no state change and no recovery-store write.
+    private void Note(string evidence)
+    {
+        journal.Add(new PortableRunnerJournalEntry(clock.GetUtcNow(), State, evidence));
+        if (journal.Count > 100) journal.RemoveAt(0);
     }
 
     private static bool Simple(string value) =>

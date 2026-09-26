@@ -7,7 +7,7 @@ using Grl.Core;
 
 namespace Grl.Integration.Tests;
 
-public sealed class PortableLifecycleTests
+public sealed partial class PortableLifecycleTests
 {
     private static readonly GitHubRepository Repository = new(7, "owner/exec", true, true);
     private static readonly IRunnerCli Cli = RunnerCliContract.Verify("2.337.0",
@@ -857,13 +857,20 @@ public sealed class PortableLifecycleTests
         public int RemoveTokenRequests { get; private set; }
         public int DeleteStaleRequests { get; private set; }
         public Exception? DeleteException { get; set; }
-        public Task<IReadOnlyList<RepositoryRunner>> ListAsync(CancellationToken ct)
+        public TaskCompletionSource<bool>? ListGate { get; set; }
+        public TaskCompletionSource<bool> ListEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public async Task<IReadOnlyList<RepositoryRunner>> ListAsync(CancellationToken ct)
         {
             ct.ThrowIfCancellationRequested();
             ListCalls++;
+            if (ListGate is not null)
+            {
+                ListEntered.TrySetResult(true);
+                await ListGate.Task;
+            }
             if (FailListCalls.Contains(ListCalls))
                 throw new InvalidOperationException("transient list failure");
-            return Task.FromResult(Lists.Dequeue());
+            return Lists.Dequeue();
         }
         public Task<RunnerOneHourToken> CreateRegistrationTokenAsync(CancellationToken ct)
         {
@@ -915,6 +922,17 @@ public sealed class PortableLifecycleTests
             ct.ThrowIfCancellationRequested();
             VerifyCount++;
             return Task.FromResult(VerifiedClis.Count > 0 ? VerifiedClis.Dequeue() : Cli);
+        }
+        public Queue<string> ListenerVersions { get; } = new();
+        public Exception? ListenerException { get; set; }
+        public int ListenerVerifyCount { get; private set; }
+        public Task<IRunnerCli> VerifyListenerVersionAsync(CancellationToken ct)
+        {
+            ct.ThrowIfCancellationRequested();
+            ListenerVerifyCount++;
+            if (ListenerException is not null) throw ListenerException;
+            return Task.FromResult(RunnerCliContract.VerifyRunOnly(
+                ListenerVersions.Count > 0 ? ListenerVersions.Dequeue() : RunnerPin.ReviewedVersion));
         }
         public Task<IOwnedRunnerProcess> StartAsync(RunnerCommand command, string verifiedVersion, CancellationToken ct)
         {
