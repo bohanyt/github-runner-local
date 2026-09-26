@@ -1,34 +1,33 @@
 # CURRENT — github-runner-local
 
-Updated: 2026-09-26. Phase: **PR19_W1_CORRECTION_READY; NF1_REVIEW_ACCEPTED; LIVE_RETRY_GATED; G1_NOT_PASSED**.
+Updated: 2026-09-26. Phase: **PR19_W1_CLOSURE_REVIEW_READY; LIVE_RETRY_GATED; G1_NOT_PASSED**.
 
 ## Authority
 
-- Canonical branch: `main`; continuing owner-designated Control Tower coordinates on Issue #1.
-- Current handoff: `docs/control-tower/handoffs/GRL-20260926-PR19-W1-RECOVERY-CORRECTION-V41.md`.
-- Required sentinel: `END_OF_GRL_HANDOFF key=GRL-20260926-PR19-W1-RECOVERY-CORRECTION-V41 sections=5`.
-- Active task: **Issue #15 W-1 correction packet `5841514277`**, FULL through `END_OF_GRL_W1_CORRECTION_PACKET key=GRL-PR19-W1-INTERRUPTION-REMOTE-RESTORE-20260926 sections=6`.
+- Canonical branch: main; continuing owner-designated Control Tower coordinates on Issue #1.
+- Handoff: `docs/control-tower/handoffs/GRL-20260926-PR19-W1-CLOSURE-FIRST-JOB-V42.md`.
+- Sentinel: `END_OF_GRL_HANDOFF key=GRL-20260926-PR19-W1-CLOSURE-FIRST-JOB-V42 sections=4`.
+- Active Issue #15 closure instruction **`5841673060`**, full through `END_OF_GRL_W1_CLOSURE_PACKET key=GRL-PR19-F911E7B-W1-CLOSURE-20260926 sections=4`.
+- W-1 contract `5841514277`, original witness contract `5841236994` and CT-SCOPE-1 `5841404018` remain.
 
-## Accepted review and remaining blocker
+## Candidate and evidence
 
-Independent review `5841490920`, reviewer claim/release `5841467525` / `5841493340`: NEEDS_G1_NF1_CORRECTION at SAME DRAFT PR #19 head `5d4b45b40ddee356b57069267e19a64b60d99789`, source base `6e7ef6efd3e48fcd44645e4270eda800edf22e68`. NF-1 production source/focused checks PASS; WRITE_SCOPE_POLICY_EXCEPTION_CONFIRMED. Reviewer executed NF-1 10/10, existing overlay 10/10 and template 117/118 with WRITE_SCOPE as the sole failure. Keep the raw exception visible, not all-green. CT did not run those tests or self-review.
+SAME DRAFT PR #19 / fix/g1-action-input-env, head `f911e7be18d7c574947416609be4c797c360eada`, old head `5d4b45b40ddee356b57069267e19a64b60d99789`, original source base `6e7ef6efd3e48fcd44645e4270eda800edf22e68`. Worker handoff `5841641608`; implementation claim `5841535729` released by `5841643269`. CT verified one fast-forward commit changes only the three witness paths. Worker reports 22/22 offline witness tests and unchanged template tree `4855ddca0143de2e0e21d95946b0e1b465b35143`; not yet independently accepted W-1 closure.
 
-**W-1 SAFETY_BLOCKER:** interrupted apply/restore before commit leaves DIRTY_TREE which restore refuses; local-HEAD-only verify-normal does not prove clean worktree or actual private remote restoration. Reviewer reproduced the interruption cases offline. The overlay has not been deployed; no current runner damage is claimed. No merge/live retry until W-1 closes.
+Retain independent NF-1 PASS and WRITE_SCOPE_POLICY_EXCEPTION_CONFIRMED from `5841490920` once unchanged blobs confirmed. Prior 117/118 (WRITE_SCOPE only) is historical raw evidence, not a new all-green run. No repeated NF-1/template/D/.NET/WPF/probe campaign required for unchanged code.
 
-## Immediate correction: same Opus, same PR, three paths
+## Next: close W-1, then the first real job
 
-After CT claim `5841507387` is released and no competing claim exists, SAME local Opus takes a NEW correction claim and continues SAME `fix/g1-action-input-env` / DRAFT PR #19 from exact old head `5d4b45b40ddee356b57069267e19a64b60d99789`. Normal fast-forward only; no new PR or unnecessary main merge.
+After CT claim `5841669712` release/no competitor, ONE focused independent reviewer, preferably SAME session that found W-1, takes a claim. Review only the correction and relevant integration: interruption recovery, preservation, destination, uncertain pushes and truthful local+remote normal verification. Execute focused checks; publish exact-head integrated PASS or concrete blocker and release. No subagents, source edits or live actions.
 
-Change ONLY `tools/g1-witness/overlay.mjs`, `tools/g1-witness/overlay.test.mjs`, `docs/dev/G1-SHA-MISMATCH-WITNESS.md`. Freeze the entire `templates/execution-repo/**` tree (including NF-1 fix/regressions/linter/workflow) and D/dependencies. CT-SCOPE-1 remains limited to the same three acceptance-only paths.
+**SEQUENTIAL:** focused closure -> separate CT merge/resume -> SAME local Opus updates the reviewed private template on existing grl-office registration and runs the normal positive request FIRST, then remaining required G1 proof and exact restoration. No new generic pre-live campaign or larger recovery-tool project. A remaining harness blocker triggers a concrete smaller/isolation decision, not automatic expanding correction loops. No unsafe merge or missing-proof waiver. Full G1 requires all original positive/negative evidence.
 
-Implement bounded checkpointed/idempotent recovery for exact known apply/restore/index/worktree/commit/push states; preserve/refuse unknown or unrelated changes. Add executable correct-private-remote/branch preflight and freshly verified post-push restoration; overall normal requires exact baseline, clean local state, tree equality to pre-overlay P and confirmed actual private main. Uncertain push/network state is pending, never assumed success. No global relaxation of DIRTY_TREE, reset/clean/force-push, or general recovery framework. Full contract and interruption matrix are in packet `5841514277`.
+## Installed versus usable
 
-Run complete offline witness tests plus diff/path/blob checks; prove the template tree remains unchanged and reuse existing NF-1/template evidence. No mandatory full template rerun, old NF-1 red repetition, .NET 384/384/WPF/RunnerContractProbe, whole-D audit or separate Windows campaign.
+Product installation/login/enrollment is already real per operator report `5841173894`. Last operator check: grl-office ID 2 online/idle, wizard running, mailbox #1/four variables intact. CT freshly verified private main still `3ca0449e39fdc28cf5ca15b30967833a95649192`, so corrected NF-1 is not deployed. First positive run `36201953082` failed before ACK; prefilter negative `36202109916` passed. No working end-to-end positive/G1 PASS yet. Current local liveness is not independently checked by CT.
 
-## Sequence and preserved state
+Goal: approved GitHub-mediated request -> local job -> structured result, initially same-repo harmless js-smoke. Not unrestricted shell/MCP or arbitrary project execution. Reopen/reboot and Issue #18 switching remain later product work.
 
-**SEQUENTIAL:** SAME Opus correction/tests/SAME-PR handoff -> ONE focused independent W-1 delta rereview (prefer SAME reviewer, separate from implementer/CT) -> separate CT merge/resume -> SAME office operator continues G1 on existing registration. Worker releases claim at handoff. No live deployment/requests during review; unresolved genuine blocker requires concrete scope escalation, not waiver.
+## Safety
 
-Preserve earlier live progress: grl-office ID 2, wizard/root, private bootstrap `3ca0449e39fdc28cf5ca15b30967833a95649192`, mailbox #1, four variables/reserve 10 GiB, failed-positive and passed-prefilter evidence. Last online/idle status is an operator snapshot, not current CT evidence. Do not repeat enrollment or implicitly stop/unregister/close-relaunch/reboot. Idle is not safe-drain proof.
-
-ARCHIVE/CHECKPOINT FIRST; previous main `9236b712bb177b326c44b3b1a9e4a3e22e922f9b`/V40 and original PR head remain recoverable. No global env/auth/credential resets or public secrets/machine details. No hosted Actions, service/UAC/security/sleep-policy changes, Stage-2/cross-repo execution or personal runner. NF-2 and app reopen/restart remain post-G1 before separately proved Issue #18 switching. CT has not launched an agent or background monitor.
+Preserve wizard/root/registration/private history/settings; no new live requests/deployment/overlay under this review gate. No implicit Stop Now/unregister/reboot/reinstall or idle-based safety claim. No hosted Actions, service/UAC/security/sleep-policy changes, cross-repo/Stage-2/personal runner or global auth/env reset. ARCHIVE/CHECKPOINT FIRST; prior main `905c1649bef2d3fd6e9db6d1956982eb9ca7b8c8` and V41 remain recoverable. NF-2 stays deferred. Keep secrets/local machine details private. CT has not launched a worker or monitor.
