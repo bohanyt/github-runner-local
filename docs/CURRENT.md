@@ -1,35 +1,44 @@
 # CURRENT — github-runner-local
 
-Updated: 2026-09-26. Phase: **NORMAL_POSITIVE_PASS; FINAL_MISMATCH_READY; G1_INCOMPLETE**.
+Updated: 2026-09-26. Phase: **G1_OFFICE_PASS_CT_ACCEPTED; POST_G1_REOPEN_RESTART_READY**.
 
 ## Authority
 
 - Canonical branch: main; continuing owner-designated Control Tower coordinates on Issue #1.
-- Handoff: `docs/control-tower/handoffs/GRL-20260926-ANCHORLESS-FINAL-G1-V44.md`.
-- Sentinel: `END_OF_GRL_HANDOFF key=GRL-20260926-ANCHORLESS-FINAL-G1-V44 sections=5`.
-- Active Issue #15 final packet **`5841981163`**, FULL through `END_OF_GRL_FINAL_G1_PACKET key=GRL-OFFICE-G1-ANCHORLESS-FINAL-20260926 sections=5`.
+- Handoff: `docs/control-tower/handoffs/GRL-20260926-G1-ACCEPTED-REOPEN-READY-V45.md`.
+- Sentinel: `END_OF_GRL_HANDOFF key=GRL-20260926-G1-ACCEPTED-REOPEN-READY-V45 sections=5`.
+- Active task: **Issue #21 — GRL-015 post-G1 reopen/restart reliability**, FULL through `END_OF_GRL_REOPEN_PACKET key=GRL-015-PLANNED-REOPEN-REBOOT-20260926 sections=9`.
 
-## Working path is real
+## G1 complete
 
-Normal positive live acceptance passed in Issue #15 `5841913208`: private main `dfb1dfd6b41d2ae951ae555ec751be2527230742`, request `5841882572`, ACK `5841886011`, run `36208004263`, result `5841899241`, successful status/verdict on grl-office ID 2, runner v2.337.0, non-elevated. NF-1 is merged/deployed. This proves GitHub request -> office runner job -> structured result works for the reviewed js-smoke profile.
+CT accepted G1 in Issue #15 comment `5842517893` after final operator report `5842484351` / release `5842487360`.
 
-Historical non-mailbox prefilter run `36202109916` remains accepted because the workflow prefilter blob is unchanged.
+Accepted live proof:
+- normal positive run `36208004263` success;
+- non-mailbox prefilter run `36202109916` skipped;
+- FAULT_INJECTED checkout-mismatch run `36212223535` failed as designed with refusal evidence;
+- private main restored to `2c8da8834e785ba012001b9427bd68380401bec7`;
+- reviewed normal workflow blob `71e0271ee9c1146ebcdc2ac9d982b32c1a773b5d` restored.
 
-## Final missing proof: anchorless mismatch
+Do not reopen G1 for generic cleanup. PR #19 stays preserved/draft as acceptance-tool history.
 
-Independent review `5841741557` closed witness W-1 and found only the runbook's raw pre-plan anchor push unsafe. CT removes that operation instead of another rewrite.
+## Next product gap
 
-Use exact reviewed tool from PR #19 `f911e7be18d7c574947416609be4c797c360eada`, unmodified:
-- P/O = current private main `dfb1dfd6b41d2ae951ae555ec751be2527230742`;
-- R = existing ancestor `3ca0449e39fdc28cf5ca15b30967833a95649192`;
-- fresh nonce.
+Current source detects an existing runner root but treats reopen as recovery-only; a fresh app process cannot resume the persisted exact runner registration. Issue #21 addresses only planned recovery from an explicit Paused/no-survivor state.
 
-R has no commit statuses; R/O share the reviewed workflow and profile blobs. No anchor commit, no PR #19 merge and no new reviewer loop.
+Target user flow:
+explicit warned Stop Now while no known job -> close app -> relaunch -> sign in if required -> Resume existing runner -> SAME runner ID online -> harmless job PASS; then repeat across a planned reboot.
 
-After CT claim release, SAME local Opus takes one broad final-G1 claim and runs plan -> overlay -> one FAULT_INJECTED request -> observation -> restore -> NORMAL_CONFIRMED -> final evidence. Do not stop at micro-stages. If mismatch/reporting and restoration pass, publish G1_OFFICE_PASS and release. Otherwise publish the exact blocker without expanding scope automatically.
+Unplanned survivor/uncertain state remains fail-closed. No duplicate registration or config.cmd on reopen.
 
-## Safety and after G1
+## Sequence
 
-Preserve runner/wizard/root/private history/settings and credentials. ARCHIVE/CHECKPOINT FIRST. No hosted Actions, arbitrary/cross-repo work, service/UAC/security/sleep changes, global auth/env reset, personal runner or implicit Stop Now/unregister/reboot/reinstall.
+**SEQUENTIAL:** broad implementation/DRAFT PR -> one focused independent review -> CT merge/resume -> same local Opus close/relaunch live proof -> planned reboot proof -> Issue #18 office/personal switching.
 
-After G1: reopen/restart reliability first, then separate Issue #18 one-active-at-a-time switching. NF-2 remains deferred.
+Implementation is source-only until the live gate. Do not Stop Now/close/reboot the proven office runner merely to develop the code.
+
+## Standing safety
+
+ARCHIVE/CHECKPOINT FIRST. Preserve registration/root/credentials/history. No hosted Actions, service/autostart, security/sleep changes, personal runner, Stage-2/cross-repo/arbitrary execution or global auth/env reset.
+
+NF-2 stays deferred unless it directly blocks Issue #21.
