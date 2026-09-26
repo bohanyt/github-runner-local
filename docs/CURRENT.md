@@ -1,60 +1,50 @@
 # CURRENT — github-runner-local
 
-Updated: 2026-09-26. Phase: **G1_OFFICE_PASS_CT_ACCEPTED; GRL015_PR22_MERGED_LIVE_ACCEPTANCE_READY**.
+Updated: 2026-09-26. Phase: **G1_OFFICE_PASS_CT_ACCEPTED; GRL015_LIVE_MANUAL_UI_FALLBACK_READY**.
 
 ## Authority
 
 - Canonical branch: main; continuing owner-designated Control Tower coordinates on Issue #1.
-- Handoff: `docs/control-tower/handoffs/GRL-20260926-PR22-MERGED-LIVE-ACCEPTANCE-V48.md`.
-- Sentinel: `END_OF_GRL_HANDOFF key=GRL-20260926-PR22-MERGED-LIVE-ACCEPTANCE-V48 sections=5`.
+- Handoff: `docs/control-tower/handoffs/GRL-20260926-LIVE-MANUAL-UI-V49.md`.
+- Sentinel: `END_OF_GRL_HANDOFF key=GRL-20260926-LIVE-MANUAL-UI-V49 sections=5`.
 - Active task: Issue #21 / GRL-015.
-- Active live packet: Issue #21 comment **`5842973464`**, FULL through `END_OF_GRL015_LIVE_GATE key=GRL-PR22-MERGED-LIVE-REOPEN-REBOOT-20260926 sections=6`.
+- Active fallback packet: Issue #21 comment **`5843171488`**, FULL through `END_OF_GRL015_MANUAL_UI_FALLBACK key=GRL015-LIVE-MANUAL-UI-20260926 sections=6`.
 
-## Merge / override
+## Status
 
-PR #22 corrected head
-`22840674b95129dc0dd0668e5ac12188ddfadbbd`
-is MERGED at
-`34ccb0c999873418a5077bd3da793a460901a968`.
+PR #22 is merged; source work is complete.
 
-Owner directed CT to open the gate and waive the second focused rereview of the
-narrow junction correction. This is recorded in Issue #21 `5842966085` as
-`OWNER_OVERRIDE_NO_SECOND_REREVIEW`; it is NOT an independent review PASS.
+External Computer Use refusal against GitHub Runner Local is an environment
+UI-control limitation, not a source/product acceptance failure by itself.
 
-The first independent review remains authoritative for all unchanged reopen
-behavior; its sole blocker was corrected in the merged two-file delta.
+Owner-manual UI fallback is authorized. The live operator must keep/take one broad
+lease, ask the owner only for the exact visible wizard actions Computer Use cannot
+perform, verify the resulting state, and continue automatically.
 
-## Live goal
+No new review/merge/CT gate is required because of UI-control denial.
 
-SAME local Opus now owns one broad live phase:
+## Live sequence
 
-1. checkpoint and fresh runner/queue checks;
-2. build merged product away from currently-running wizard binaries;
-3. explicit warned Stop Now;
-4. verify runner ID 2 offline + persisted Paused/no-survivor;
-5. close old wizard;
-6. launch merged product against SAME root/repo/name;
-7. normal sign-in if required;
-8. Resume existing runner;
-9. verify SAME ID 2 online, no duplicate registration;
-10. one harmless js-smoke PASS -> REOPEN_RELAUNCH_PASS;
-11. checkpoint/Stop Now again;
-12. planned owner-visible reboot boundary;
-13. after boot manual launch/sign-in/resume SAME ID 2;
-14. second harmless js-smoke PASS -> GRL015_REOPEN_REBOOT_PASS.
-
-No reviewer/CT handoff between these ordinary steps.
+1. operator fresh checks/checkpoint;
+2. owner manually Stop Now + confirm + close old wizard;
+3. operator verifies ID 2 offline + Paused/no-survivor;
+4. operator launches merged product;
+5. owner manually signs in if needed, confirms exact private repo, clicks Resume existing runner once;
+6. operator verifies SAME ID 2 online/no duplicate and runs one js-smoke PASS;
+7. repeat planned Stop Now/close manually;
+8. operator verifies checkpoint and asks owner for normal Windows Restart;
+9. after boot operator resumes/launches product;
+10. owner manually sign-in/repo/resume if Computer Use still denied;
+11. operator verifies SAME ID 2 and runs second js-smoke PASS;
+12. publish final Issue #21 evidence/release.
 
 ## Safety
 
-ARCHIVE/CHECKPOINT FIRST. Preserve runner/root/credentials/private history.
+No hidden bypass of Computer Use permission and no process-kill substitute for
+Stop Now. ARCHIVE/CHECKPOINT FIRST.
 
-No G1 rerun, PR #19, hosted Actions, service/autostart, security/sleep changes,
-personal runner, Stage-2/cross-repo/arbitrary jobs, global auth/env reset,
-delete/reset/reinstall or `--replace`.
+No G1 rerun, PR #19, hosted Actions, service/autostart/security/sleep changes,
+personal runner/Issue #18 yet, cross-repo/Stage-2/arbitrary jobs, global auth/env
+reset, reinstall/unregister/reset/delete or `--replace`.
 
-At the actual Windows reboot boundary, tell the owner the machine is ready rather
-than surprise-rebooting an actively used system.
-
-After both witnesses pass: CT accepts Issue #21, then Issue #18 switching is next.
-NF-2 remains deferred.
+After both live witnesses pass: CT accepts Issue #21; Issue #18 switching is next.
