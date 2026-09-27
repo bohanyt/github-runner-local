@@ -19,48 +19,447 @@ Statement labels used throughout:
 Project evidence level of this whole document: `PROPOSED`, with individual source facts `SOURCE_VERIFIED`.
 No `LOCAL_CHECKED` or `WINDOWS_TESTED` claim is made.
 
+**Revision 2 (correction pass for CT packet Issue #18 `5852943229`, key `GRL-PR23-D1-D3-20260927`).**
+§0 is authoritative wherever it conflicts with §1–§22.
+
+- Revision 1 is PR #23 head `5e5ce953272b3c1a194d0d16ab8813b539690a89`.
+- In revision 1, the label fence, the `GRL_ADMISSION` variable, the timing constants and the
+  frozen-set stop proof (§7E, §9–§12, §15) are **superseded** by §0.
+- They are kept below only as the record of the rejected reasoning. The research, the source
+  appendix and the persistent-registration objective are retained.
+
 ---
 
-## 1. Executive summary
+## 0. Correction pass — D1/D2/D3 (authoritative)
 
-**Recommendation (PROPOSED): a two-layer fence with drain in between.**
+### 0.1 Outcome
 
-1. **Layer 1 — request admission gate.** A new repository variable `GRL_ADMISSION` is added to the
-   server-side job-level `if:` of the `admit` job only. Admission is open only when the value is exactly
-   `open`; missing or any other value means closed. When closed, a new request's `admit` job is skipped by
-   GitHub **before any runner assignment**, and the other three jobs are skipped by their existing
-   conditions. No self-hosted job is created.
-2. **Drain to terminal.** Wait until the repository has **zero non-terminal workflow runs**. This covers
-   all four jobs of every already-accepted request and the idle gaps between them.
-3. **Layer 2 — exact-ID runner routing fence.** Remove the custom label `grl-exec` from the exact
-   numeric runner (repo + ID + name re-verified). Every GRL job requires `grl-exec`. After this, no GRL job
-   can be *newly* assigned to that runner, while the listener keeps running and nothing is interrupted.
-4. **Frozen-set verification.** After the label fence, the set of jobs that can ever run on the old runner
-   is frozen: only jobs assigned before the fence. Re-verify, over a settle window, that there are zero
-   non-terminal runs and the runner is not busy. If anything appears, **roll the fence back** by re-adding
-   the label. Never stop in that case.
-5. **Deactivate.** Only then stop the product-owned process. Stop Now is a tree kill.
-6. **Activate the other machine in reverse order.** Start its existing registration *without* `grl-exec`,
-   prove it is online and idle, add `grl-exec` to that exact ID, then set `GRL_ADMISSION=open`.
+**Outcome A: an implementation-ready recommendation with explicitly unavailable operations.**
 
-**Why it is safe:** the layers use independent server mechanisms: a repository variable and runner labels.
-For the switch to cancel a job, three things must all fail: a new job must be created despite closed
-admission, it must be assigned despite the label fence, and it must escape two verification reads
-separated by the settle window. Every failure of a single layer is detected and handled by waiting or
-rolling back, never by stopping. `busy=false` is never used as a drain signal on its own. It is only read
-*after* the fence has frozen the set of assignable work.
+Two mechanisms replace the revision-1 fences. Neither relies on GitHub label/variable propagation
+or on API staleness bounds.
 
-**Two persistent registrations survive.** `grl-office` (ID 3) and a future `grl-personal` both stay
-registered. "Active" means "holds `grl-exec`". No live DELETE, no re-registration and no credential
-movement are needed for a switch. See §14 for the limits: the 14-day auto-removal and the D30 wording.
+1. **Runner-local job gate.** It is enforced before any default-condition workflow step, for every
+   workflow SHA. It uses the runner's supported job-started / job-completed hooks and product-owned
+   local gate state.
+2. **Serialized ownership log.** It is a Git reference updated only by fast-forward
+   compare-and-swap. It decides which machine may make its gate pass-capable.
 
-**Owner decisions required (§20):** re-interpret D30's "both share `grl-exec`" as "`grl-exec` is held only
-by the active runner"; grant (or decline) Actions-variables permission to the GitHub App; accept skipped
-requests while admission is closed; a 14-day keep-alive policy; and authorization of implementation plus
-live witnesses.
+Both registrations stay persistent and both keep `grl-exec`, so the D30 wording is preserved.
 
-The rejected alternatives are exact-ID DELETE as the primary fence, `busy=false`+Stop Now,
-variable-routed `runs-on`, workflow disable, concurrency groups, runner groups and ephemeral runners (§8).
+**No GitHub-side label, variable or workflow change is required for safety.**
+
+Operations that stay unavailable are listed in §0.9.
+
+### 0.2 Resolution table
+
+| Gap | Old design failure (trace §0.4–0.6) | Corrected rule | Primitive / evidence | Deterministic test | Remaining |
+|---|---|---|---|---|---|
+| **D1** ownership | Two clients read `H=∅` and both add a label. X's T4 rollback re-adds its label after Y acquired. T9 abort after transfer. | Ownership lives only in a CAS'd Git ref log. A machine may set its gate `ACTIVE` only after its own `ACQUIRED(e)` commit lands. X publishes `RELEASED(e)` only after its gate is `INACTIVE` and all passed jobs are done. Abort is local and only before `RELEASED`. There is no label-based rollback and no remote takeover. | `PATCH /git/refs` with `force=false` (documented fast-forward-only), `POST /git/refs` (create-if-absent). Model: 63,126 states, no dual pass-capable gates. | D1-T (§0.4) | **OD-G:** a CAS repo permission. Forced takeover is unavailable (needs OD-E + lease). |
+| **D2** stop proof | An assignment committed before the fence is delivered after two quiet reads, then killed. | Stop permission comes from a **local proof**: gate `INACTIVE` written, every job intent resolved, every passed job has a done record (or no `Runner.Worker` exists). Stop is **unavailable** in `ACTIVE`/`DRAINING`, apart from the existing warned emergency Stop Now (D31). GitHub observation is used for liveness only. | The job-started hook runs as a pre-job step before workflow steps (v2.337.0 source). Intent-first file handshake. Model: 42,434 states, no kill of a passed job; negative control fails as expected. | D2-T (§0.5) | `always()` steps still run after a hook refusal (inventory §0.6). Trusted-code assumption A3. |
+| **D3** rerun affinity | Rerun of `execute` after X stopped routes to Y and runs with X's admission. Historical-SHA reruns use old workflow code. | The hook refuses unless the workflow SHA is allowlisted, the gate is pass-capable, and (for non-`admit` jobs) the run was admitted **on this machine in this gate epoch**. This is enforced before any default-condition step, for any workflow SHA. | Runner-level hook, independent of workflow content. All five private-main commits inspected. Model: 12/12 cases. | D3-T (§0.6) | A future workflow that adds `always()`/`failure()` steps must pass a new lint rule. |
+
+### 0.3 Corrected architecture
+
+#### Local gate (per machine; product-owned; outside `_work`)
+
+State file `grl-gate/state.json`, written with an atomic replace:
+
+```
+{ repo, runnerId, runnerName, ownershipEpoch, gateEpoch,
+  mode: ACTIVE | DRAINING | INACTIVE, allowedWorkflowShas[] }
+```
+
+- Ledger: `grl-gate/ledger/<gateEpoch>/<runId>`, created only by an `admit` pass.
+- Job records: `grl-gate/jobs/<runId>-<attempt>-<job>-<nonce>.{intent,pass,refuse,done}`.
+- A missing or unreadable state means `INACTIVE`, so the gate fails closed.
+
+The product configures the runner root `.env` with:
+- `ACTIONS_RUNNER_HOOK_JOB_STARTED=<root>\grl-gate\job-started.js`
+- `ACTIONS_RUNNER_HOOK_JOB_COMPLETED=<root>\grl-gate\job-completed.js`
+
+Using `.env` is the documented configuration method, and changes need a runner restart (FACT, docs).
+v2.337.0 runs `.js` hooks with the runner's bundled Node (FACT, `HostContext.cs` L812–834). This avoids
+PowerShell execution-policy dependence.
+
+#### Hook decision (`job-started.js`)
+
+It runs intent-first:
+
+1. Write `*.intent`, then flush.
+2. Read `state.json`.
+3. Decide, following the rules below.
+4. Write `*.pass` or `*.refuse`.
+5. Exit 0 on pass, non-zero on refuse.
+
+A missing hook file also fails the job, because the runner throws `FileNotFoundException`.
+
+Decision rules, applied in order:
+
+| Condition (from default env `GITHUB_REPOSITORY`, `GITHUB_SHA`, `GITHUB_WORKFLOW_SHA`, `GITHUB_RUN_ID`, `GITHUB_RUN_ATTEMPT`, `GITHUB_JOB`) | Decision |
+|---|---|
+| Repo ≠ state repo, or the SHA is not in `allowedWorkflowShas`, or `GITHUB_SHA ≠ GITHUB_WORKFLOW_SHA` | refuse |
+| `mode = INACTIVE` | refuse |
+| `GITHUB_JOB = admit` and `mode = ACTIVE` | pass; create ledger entry `(gateEpoch, runId)` **before** writing `.pass` |
+| `GITHUB_JOB = admit` and `mode = DRAINING` | refuse (local admission close) |
+| `GITHUB_JOB ∈ {execute, report, verdict}` | pass iff ledger `(gateEpoch, runId)` exists; else refuse |
+| Any other job name | refuse |
+
+`job-completed.js` writes `*.done` for passed jobs. It is registered by the runner as a post-job
+step with `always()` (FACT, `JobExtension.cs` L570–580).
+
+#### Ownership log (cross-machine; OD-G)
+
+A single ref `refs/heads/grl-control` lives in a dedicated private control repository. Recommended
+repository: `github-runner-local-control`. The ref must live **outside** the execution repo, so the
+product never needs Contents write where workflows live.
+
+- Each record is an empty-tree commit whose message is a JSON line:
+  `{ v:1, epoch, holder:{name,runnerId}, state: ACQUIRED | RELEASED, at }`.
+- Its parent is the head that was observed.
+- Mutation happens only through `PATCH /git/refs/heads/grl-control` with `force=false`. Docs: "make sure
+  the update is a fast-forward update … not overwriting work". The first record uses `POST /git/refs`,
+  which fails if the ref exists.
+- A stale client, or any delayed or duplicated request, whose parent is no longer the head **cannot**
+  land, because the update is not a fast-forward.
+
+#### Ordering rules
+
+- **O1 — Startup.** Before starting `run.cmd`, the product writes `mode=INACTIVE`. It may set `ACTIVE`,
+  with a fresh `gateEpoch` and an empty ledger, only after a **fresh** read shows
+  `ACQUIRED(epoch, holder=self)` as the ref head. If the ref is unreadable, the gate stays `INACTIVE`.
+- **O2 — Release (X).**
+  1. `ACTIVE → DRAINING`: admit is refused locally.
+  2. A liveness wait for ledger runs. This is advisory only.
+  3. `DRAINING → INACTIVE`.
+  4. Resolve all intents.
+  5. Require every `.pass` to have a `.done`, or require that no `Runner.Worker` exists.
+  6. Only then CAS `RELEASED(e)`.
+- **O3 — Acquire (Y).** Read the head. Require `RELEASED(e)`. CAS `ACQUIRED(e+1, Y)` with that head as
+  parent. Only after it lands (verified by re-read on an uncertain response) does Y apply O1 to become
+  `ACTIVE`.
+- **O4 — Abort / rollback ownership.**
+  - X may return `DRAINING/INACTIVE → ACTIVE` only while the ref head is still `ACQUIRED(e, X)`, i.e.
+    before X's `RELEASED(e)` lands. This is purely local because nobody else can acquire.
+  - After `RELEASED(e)`, X can become `ACTIVE` again only by winning a new O3 CAS.
+  - There is no label rollback, and admission is never reopened for a machine that lost the CAS.
+- **O5 — Pause (same machine, no handoff).** Steps O2.1–O2.5, then stop. Ownership stays `ACQUIRED(X)`.
+  Resume uses O1 with a new `gateEpoch`, so earlier ledger entries no longer count.
+
+**I2 (restated, not weakened; now execution-level).** At every instant, at most one machine's gate is
+pass-capable (`ACTIVE`/`DRAINING`), and at most one machine has passed-but-unfinished jobs. The
+argument:
+
+- X's pass-capable interval ends (O2.3) and its passed jobs finish (O2.5) **before** `RELEASED(e)`
+  exists.
+- Y's pass-capable interval starts only **after** its `ACQUIRED(e+1)` landed, and that CAS requires
+  `RELEASED(e)` as parent.
+- The CAS admits exactly one successor per parent.
+
+**Routing.** Both runners may keep `grl-exec`. A job routed to an online machine whose gate is not
+pass-capable is **refused** before any default-condition step. That costs liveness (the request fails and
+must be re-posted), not safety. Operational rule: keep the inactive runner stopped. Stopping it is now
+provably safe under O2/O5.
+
+### 0.4 D1 — ownership / concurrent acquire / rollback
+
+**Old-design counterexamples (ordered):**
+
+1. **Two readers.** `Y:readH(∅)` → `X:readH(∅)` → `Y:addLabel` → `X:addLabel` gives `H={X,Y}`. The
+   disposable model reproduces this in 4 steps.
+2. **Stale rollback.**
+   - X: T3 fence → T4 verifying (the old doc allowed `H={Y}`).
+   - Y: T6 → T7 adds label → `H={Y}` → T8 opens.
+   - X: T4 detects a job bound to X → ROLLBACK_FENCE re-adds label → `H={X,Y}`.
+3. **Abort after transfer.** X is released (label removed) → Y acquires → the owner clicks T9 Abort on X →
+   X re-adds its label and sets `V=open` → two holders.
+
+**Corrected rule:** O1–O4.
+
+- The only cross-machine write is a fast-forward CAS on one ref.
+- Acquire requires `RELEASED` as the exact parent.
+- Local `ACTIVE` requires the machine's own `ACQUIRED` to be the fresh head.
+- Rollback and abort are local and allowed only while still owner.
+
+Stale-client exclusion:
+- A stale CAS is not a fast-forward, so it is rejected.
+- A stale **local** belief cannot pass jobs after a restart, because O1 requires a fresh read.
+- A long-running `ACTIVE` X cannot be superseded at all, because no takeover exists.
+
+**Evidence and assumptions:**
+- FACT (docs): `force=false` guarantees fast-forward-only; 409/422 on conflict.
+- **A5 (INFERENCE):** GitHub applies ref updates atomically per ref, which is standard git ref-transaction
+  semantics.
+- **A6:** each machine's product is the only writer of its gate state (single-instance product).
+- The App needs Contents read/write on the control repo only (**OD-G**; INFERENCE on the permission name).
+
+**D1-T (deterministic):**
+- A linearizable fake ref with separate send/land steps, so requests can land late or duplicated.
+- Controllers X and Y run release, acquire, re-acquire and abort.
+- The run enumerates all interleavings and asserts that at no step are two gates pass-capable.
+- Also assert:
+  - X's abort is refused once `RELEASED` landed;
+  - a lost CAS response is resolved by re-read;
+  - a delayed stale CAS never lands;
+  - an unreadable ref keeps the gate `INACTIVE`.
+- Negative control: the revision-1 label algorithm must violate I2.
+
+**Unsupported, so unavailable:** remote release / forced takeover. It would need an owner-attested
+"X is gone" record **plus** a gate lease with an explicit bounded-clock-drift assumption. That is OD-E and
+a separate design.
+
+### 0.5 D2 — stop permission without GitHub timing bounds
+
+**Old-design counterexample (ordered, no layer malfunction needed):**
+
+1. The server commits an assignment of job J to X, under labels still present.
+2. The product removes the label.
+3. Quiet read 1 (idle).
+4. Quiet read 2 (idle).
+5. J is delivered and starts.
+6. The product kills the tree, and J is terminated.
+
+Delivery and observation delay have no documented bound, so no timer makes steps 3–4 prove anything.
+The claim "three independent failures must coincide" is **withdrawn**: the counterexample needs no
+failure at all, and API mechanisms are not independent failure sources.
+
+**The four concerns, separated:**
+
+| Concern | Revision 2 treatment |
+|---|---|
+| Routing eligibility change | Not used for safety. Labels and variables are untouched. |
+| Assignments already committed | Every job that reaches X, however late, must pass X's local hook before any default-condition step. After `INACTIVE` is written, none can pass (except the handshake race, which is closed by intent-first). |
+| API observation freshness/completeness | Liveness only: when to move `DRAINING → INACTIVE`. Early or late observation never makes the stop unsafe; it can only cause a downstream job to be **refused** (the request fails visibly and is re-posted). |
+| Permission to terminate the owned process | **Local proof only** (O2.3–O2.5): gate `INACTIVE` is durable; no intent is unresolved; every `.pass` has `.done`, or the owned process tree contains no `Runner.Worker`. |
+
+Why the proof covers late assignments:
+- Any job delivered after the proof either writes its intent after `INACTIVE` (so it reads `INACTIVE` and
+  refuses), or is killed before or during the hook. In either case no workflow step with a default
+  condition has run.
+- The documented 60-second pickup rule (FACT) additionally means an assignment X never picked up is
+  re-queued for another runner. That runner's own gate decides.
+
+**Crash cases.** Every hook runs inside a `Runner.Worker` process.
+- An unresolved `.intent`, or a `.pass` without `.done`, **with no `Runner.Worker` in the owned tree**, is
+  recorded as `GATE_ANOMALY`. It permits the stop, because no hook or step can be executing.
+- With any `Runner.Worker` present, the product waits. There is no timer-based override.
+
+**Refined I1:** no automatic stop terminates a job that has **passed** the local gate. A job that could
+not pass may be refused or terminated; either way it ends failed without executing a default-condition
+step.
+
+**Evidence and assumptions:**
+- FACT: `JobExtension.cs` L301–311 inserts the job-started hook into the pre-job steps, and L582–584
+  places pre-job steps before job steps.
+- FACT (docs): "If there is any other exit code, the job will not run and will be marked as failed."
+- FACT (source): the steps are processed in one queue, so `always()` job steps are still evaluated after a
+  failed pre-job step. See §0.6 for why this is harmless for every existing workflow blob.
+- **A1 (INFERENCE, witness):** the Worker inherits the hook variables from the `.env` the listener loads
+  at startup (`Program.cs` `LoadAndSetEnv`).
+- **A3:** trusted-code mode (D08/D14). Jobs run as the same OS user and could tamper with gate files; the
+  gate is a race/affinity control, not a security boundary.
+- **A4:** local NTFS ordering. An atomic replace plus flush of the state file, and intent files created
+  and flushed before the state read.
+
+**D2-T (deterministic):**
+- The product sequence is: write `INACTIVE` → scan → stop. Up to 3 jobs, each running the hook sequence
+  intent → read → decide → run → done, with arbitrary interleaving and a crash at any step.
+- Assert that the stop never happens while any job is passed-and-not-done.
+- Assert that a job arriving after the proof is refused.
+- Assert that a worker crash (pass without done, no worker) is recorded as an anomaly and permits the stop.
+- Negative controls:
+  - a read-first hook must fail;
+  - the revision-1 "fence + two quiet reads + delayed delivery" model must fail.
+
+**Unavailable:** any automatic stop while `ACTIVE` or `DRAINING`. The existing warned emergency Stop Now
+remains (D31) and records `RECOVERY_REQUIRED`.
+
+### 0.6 D3 — late and historical rerun affinity
+
+**Old-design counterexamples (ordered):**
+
+1. **Rerun-failed after X stopped.**
+   - Request R is admitted on X; `execute` fails.
+   - The switch completes: X is stopped and Y is active with `grl-exec`.
+   - The owner re-runs failed jobs: `execute`, `report` and `verdict` are routed to Y.
+   - Y executes the profile using X's admission evidence (disk/elevation/capabilities measured on X).
+2. **Rerun-one-job during activation.** Y has just added its label (T7). A rerun of R's `execute` is
+   assigned to Y before T8. Same violation.
+3. **Historical SHA.** A rerun of a run created at private commit `37b0f13` (temporary fault-injected
+   overlay) re-executes that commit's workflow and actions. A new guard deployed on main does not apply,
+   because reruns use the original `GITHUB_SHA` (FACT, docs).
+
+**Corrected rule (hook table, §0.3):**
+- Non-`admit` jobs pass only if **this machine** created the ledger entry for this run **in its current
+  gate epoch**.
+- Every job is refused unless its workflow SHA is on the product's reviewed allowlist. Initially the
+  allowlist is only `2c8da8834e785ba012001b9427bd68380401bec7`.
+
+Applied to each rerun timing:
+
+| Timing | Result |
+|---|---|
+| After X stopped | Routed to Y; refused (no ledger entry on Y). |
+| During activation | Refused (Y's new epoch ledger is empty). |
+| After the switch | Refused on Y. On X after a later re-acquire, refused too (new epoch). |
+| Historical SHA | Refused on any machine, because the hook is runner-level and applies regardless of workflow content. |
+
+A full "re-run all jobs" re-runs `admit` on the current active machine. That machine re-admits (or
+refuses) with **its own** checks and ledger, so affinity holds.
+
+**`always()` inventory (FACT, blobs inspected).** Private main history is `890829e` (no workflow),
+`3ca0449`, `dfb1dfd`, `2c8da88`, with blob `71e0271ee9c1146ebcdc2ac9d982b32c1a773b5d`, and `37b0f13`,
+with blob `003e2825a9e5844d2237998baebfba24d4df5905`.
+
+- Each has exactly one step with `if: always()`: `actions/upload-artifact` of `grl-outcome` in
+  `execute`.
+- After a hook refusal the profile step is skipped (default condition), so the upload finds no files and
+  only warns (`if-no-files-found: warn`).
+- The second upload requires `execution_status == 'BLOCKED'` from the skipped step, so it is false.
+- Therefore no profile or target code runs after a refusal in any existing blob. Reruns of `37b0f13` are
+  refused by the SHA allowlist in any case.
+
+**New lint rule (template):** reject any step condition containing `always()`, `failure()` or
+`cancelled()` except that exact upload step. This keeps the property for future SHAs, which still also
+require allowlisting.
+
+The same rule must reject any referenced action that declares a `pre` step. An action's `pre-if`
+defaults to `always()`, and pre-steps are queued after the hook but are not skipped by its failure.
+
+INFERENCE (verify at implementation against the pinned SHAs):
+- the pinned `actions/checkout@11bd7190…`, `actions/upload-artifact@ea165f8d…` and
+  `actions/download-artifact@d3f86a10…` declare no `pre`;
+- the local `grl-*` actions declare only `main`;
+- `post` steps are registered only when their main step ran.
+
+**D3-T (deterministic):**
+- A table-driven run of hook decisions over `{machine, gateEpoch, mode, job, runId, sha}` for: rerun-failed
+  after stop; rerun-one-job during activation and after the switch; rerun after the old owner re-acquires;
+  historical SHAs `3ca0449` and `37b0f13`; a fresh request on the new owner.
+- Plus a lint test for the `always()` inventory.
+
+**Remaining:**
+- Wrong-host downstream work is now **refused, not executed**. The affected request fails and must be
+  re-posted.
+- Each future private workflow deploy requires an explicit allowlist update in the product. This is
+  fail-closed: new SHAs are refused until allowlisted.
+
+### 0.7 What revision 2 drops from revision 1
+
+These are not required for safety:
+- the `GRL_ADMISSION` variable (so OD-B is withdrawn);
+- the label fence and label rollback;
+- label-less enrollment (the D30 wording is kept);
+- the timing constants as a safety argument;
+- the "frozen-set" stop.
+
+The following are kept:
+- all source and doc research (§5, §6, §22);
+- the rejection of DELETE, `busy=false` and plain Stop Now (§8);
+- persistent registrations;
+- the failure-matrix discipline (§13), where the "never automatically" column still applies.
+
+### 0.8 Model execution disclosure
+
+A disposable offline model was actually executed. It is kept local and is not committed.
+
+- File SHA-256: `35DD5C887BAC595369A173E12993943ED944516ABB25C3A5C75D5291048F21B0`.
+- Run with Node v24.14.1 on the design worker, exit code 0.
+
+Results (DFS over all interleavings of bounded programs):
+
+| Check | Expected | Result |
+|---|---|---|
+| D1 revision-1 label algorithm | violation expected | Violated (two holders) after 7 states. |
+| D1 CAS log + gate, with delayed/duplicated deliveries | no violation | None in 63,126 states. |
+| D2 revision-1 fence + two quiet reads + unbounded delivery | violation expected | Violated after 14 states. |
+| D2 intent-first handshake | no violation | None in 42,434 states. |
+| D2 read-first handshake | violation expected | Violated after 48 states. |
+| D3 decision table | as expected | 12/12 cases as expected. |
+
+This is design-level evidence only. It is **not** a product test and not `LOCAL_CHECKED` for any
+implementation.
+
+### 0.9 Minimal source-only scope for the Sol worker, and what stays unavailable
+
+**Implementable now (no new permission; single machine):**
+
+- **S1 — Gate.**
+  - `job-started.js` / `job-completed.js` with the §0.3 rules and intent-first handshake.
+  - Gate state, ledger and job-record formats, with atomic file helpers.
+  - The product writes the runner root `.env` hook variables.
+  - The SHA allowlist is product configuration.
+- **S2 — Local lifecycle.**
+  - O1 startup (`INACTIVE` default).
+  - O2 Release steps 1–5, and O5 Pause/Resume with new gate epochs.
+  - Enumeration of `Runner.Worker` in the owned process tree.
+  - A proof-gated stop that replaces "Stop Now" for planned pause.
+  - Emergency Stop Now stays warned and records `RECOVERY_REQUIRED`.
+- **S5 — E template lint.**
+  - The `always()`/`failure()`/`cancelled()` inventory rule and its tests.
+  - No workflow behaviour change and no private deploy.
+- **S6 — Tests.**
+  - D1-T, D2-T and D3-T as unit tests with fakes.
+  - Hook-script tests run with Node.
+
+**Single-machine mode rule (without OD-G).** The gate may become `ACTIVE` without an ownership log only
+when the fresh runner list for the repo contains **exactly one** registration and it matches the
+persisted ID and name. A second registration puts the gate in `INACTIVE` + `SWITCH_BLOCKED`. Enrolling a
+second machine therefore requires OD-G first, so I2 is never left to an unenforced assumption.
+
+This check is a snapshot. It is sufficient only because registering a second runner is itself a
+separately authorized owner action (D30/OD-F). It is not a substitute for the CAS log.
+
+**Implementable as source behind a disabled capability (needs OD-G before any live use):**
+
+- **S3 — Ownership-log client** (Git refs/commits API, fake-tested).
+- **S4 — Cross-machine Release step 6 + Acquire (O3).**
+
+**Unavailable:**
+
+| Operation | Why unavailable | What would enable it |
+|---|---|---|
+| Automatic stop in `ACTIVE`/`DRAINING` | No proof exists in those states | Nothing. It is replaced by Release/Pause. |
+| Remote release / forced takeover | See §0.4 | OD-E plus a lease design. |
+| Scheduled keep-alive | — | OD-D. |
+| Personal enrollment | — | D30 + OD-F. |
+| Live witnesses (§18, revised) | — | OD-F. |
+
+Revised live witnesses:
+- **W1′:** hook refusal on ID 3 for a non-allowlisted SHA or a non-ledger downstream.
+- **W2′:** planned Pause with proof-gated stop, then Resume.
+- **W3′:** one-machine Release → Acquire via the ownership log (needs OD-G).
+- **W4′:** mid-request drain, where downstream work is allowed while `DRAINING`.
+
+All use js-smoke only.
+
+---
+
+## 1. Executive summary (revision 2)
+
+**Recommendation (PROPOSED, revision 2).** Enforce one-active-at-a-time **on the runner machines
+themselves**:
+
+- a supported job-started hook refuses every job unless this machine's gate is pass-capable, the workflow
+  SHA is allowlisted, and (for downstream jobs) the run was admitted here in the current gate epoch;
+- cross-machine ownership moves only through a fast-forward-CAS Git ref log;
+- stop is permitted only by a local proof that no passed job is unfinished.
+
+Details and evidence are in §0.
+
+**Why it is safe, and under which assumptions.**
+- I1 (no passed job killed), I2 (one pass-capable machine) and I3 (affinity) rest on local ordering plus
+  one atomic CAS.
+- They do not rest on GitHub routing, propagation or API freshness.
+- The assumptions are A1 (hook environment inheritance, witness needed), A3 (trusted-code mode),
+  A4 (local file ordering), A5 (atomic ref update) and A6 (single product writer per machine).
+
+**Two persistent registrations survive**, and both keep `grl-exec`, as D30 is worded.
+
+**Owner decisions** are listed in §20: OD-A (revised), OD-C, OD-D, OD-E, OD-F and new OD-G. OD-B is
+withdrawn.
+
+*(The revision-1 summary is superseded. Its "three independent failures" claim is withdrawn; see §0.5.)*
 
 ---
 
@@ -139,25 +538,33 @@ compared by blob SHA. `.github/workflows/grl-dispatch.yml`:
 
 ## 3. Safety property / invariant
 
-PROPOSED invariants for any switching protocol:
+PROPOSED invariants for any switching protocol. These are the revision-2 wording; see §0 for how each is
+enforced.
 
-- **I1 No interruption.** The switch never terminates a runner process while any job is assigned to it.
-  This covers the whole span from server assignment to job completion.
-- **I2 Single active.** At every instant, at most one registration in the execution repo holds `grl-exec`.
-  A switch opens admission only when exactly one holder exists and it is online.
+- **I1 No interruption.** No automatic operation terminates a runner process while any job that has
+  **passed the local gate** is unfinished. A job that cannot pass the gate may be refused or terminated;
+  either way it ends failed without executing a default-condition workflow step.
 
-  A holder may later go offline while admission stays open, for example the existing planned
-  pause/reboot. That state (`ACTIVE_DEGRADED`) is safe: requests queue on the server, up to 24 h, until
-  that holder resumes.
-- **I3 Request affinity.** All self-hosted jobs of an admitted request run on the runner that ran its
-  `admit` job. Violations must be prevented by ordering and detected (and rolled back) if they appear.
+  Revision 1 phrased this as "while any job is assigned". That is not provable without a documented
+  delivery bound (§0.5).
+- **I2 Single active (execution-level).** At every instant, at most one machine's gate is pass-capable,
+  and at most one machine has passed-but-unfinished jobs. It is enforced by the CAS ownership log plus
+  local ordering (§0.3).
+
+  Revision 1 phrased this as "at most one registration holds `grl-exec`". That was not enforceable with
+  non-atomic label writes (§0.4). Both registrations may now hold `grl-exec`; a job routed to a
+  non-pass-capable machine is refused (a liveness cost only).
+- **I3 Request affinity.** Every non-`admit` job executes only on the machine that admitted its run, in
+  the same gate epoch. Otherwise it is refused before any default-condition step. This holds for reruns
+  and for historical workflow SHAs (§0.6).
 - **I4 Truthful uncertainty.** Any unreadable, ambiguous or contradictory observation yields a pending or
   blocked state. Nothing is ever automatically stopped, deleted, relabelled-to-active or reopened on
   uncertainty.
 - **I5 Exact identity.** Every mutation targets repo full name + numeric runner ID + exact name, re-verified
   by a fresh read immediately before the mutation. There is no name-only adoption and no historical ID 2.
 
-"Active" is defined as **holding `grl-exec`**. Being online alone is not active.
+"Active" is defined (revision 2) as **being the holder of the latest `ACQUIRED` record in the ownership
+log, with a pass-capable local gate**. Holding `grl-exec` or being online alone is not active.
 
 ---
 
@@ -350,6 +757,8 @@ DELETE the exact ID. On 422, stay online and retry later. On 204, the listener s
 
 ### E. Two-layer fence (recommended) — A + exact-ID label fence + frozen-set verification
 
+> **SUPERSEDED by §0 (revision 2).** Kept only as a record of revision 1. Do not implement this section.
+
 This is A, plus `DELETE …/labels/grl-exec` on the exact ID after the drain, a re-verification over a
 settle window, and only then the stop. Activation is the reverse. Details in §9–§12.
 
@@ -387,6 +796,8 @@ Kept as documented fallback only.
 ---
 
 ## 9. Recommended protocol (PROPOSED)
+
+> **SUPERSEDED by §0 (revision 2).** Kept only as a record of revision 1. Do not implement this section.
 
 ### 9.1 GitHub-side state (authoritative, readable, idempotent)
 
@@ -451,6 +862,8 @@ It is covered as follows:
 ---
 
 ## 10. Exact state machine
+
+> **SUPERSEDED by §0 (revision 2).** Kept only as a record of revision 1. Do not implement this section.
 
 The global state is **derived from GitHub** (`V`, `H`, `N`, `O`, `B`) plus local ownership. The journal
 records intent and outcome but never overrides a fresh GitHub read.
@@ -534,6 +947,8 @@ owner-initiated switch action. There is no scheduled or automatic handoff.
 
 ## 11. Office → personal sequence (release on office, acquire on personal)
 
+> **SUPERSEDED by §0.3 O2/O3.** Office→personal is: Release on office (O2) → Acquire on personal (O3). Remote release (§11.3 below) is unavailable (§0.4).
+
 The two halves run on different laptops, often in different places. They coordinate **only through
 GitHub state**. The intermediate state `RELEASED` (admission closed, no holder) is a normal, safe resting
 state.
@@ -575,6 +990,8 @@ The product on office must never re-add `grl-exec` except through an explicit Ac
 
 ## 12. Personal → office sequence
 
+> **SUPERSEDED by §0.3.** The procedure is symmetric: Release (O2) then Acquire (O3). Same-machine Pause/Resume is O5.
+
 This is symmetric. Release on personal (T1–T5), then acquire on office (T6–T8) using the **existing ID 3
 registration** (resume path, no configure). Rollback to office after a failed personal activation is just
 "Acquire on office". Both paths reuse the planned-pause resume proven in GRL-015.
@@ -585,6 +1002,14 @@ enrolling personal and is the basis of live witness W3 (§18).
 ---
 
 ## 13. Failure / recovery matrix
+
+> **Revision 2:** rows that act on labels, `GRL_ADMISSION` or T-states are superseded by §0. The "Never" column still holds. Revision-2 additions:
+>
+> - a job reaching a non-pass-capable gate is refused (the request is re-posted);
+> - an unreadable ownership ref keeps the gate `INACTIVE`;
+> - a lost CAS response is resolved by re-read;
+> - pass-without-done with no `Runner.Worker` is recorded as an anomaly and permits the stop;
+> - a missing or corrupt gate state means `INACTIVE`.
 
 "Auth" = authoritative state. "Never" = what must never happen automatically.
 
@@ -622,31 +1047,36 @@ enrolling personal and is the basis of live witness W3 (§18).
 
 ## 14. Registration-model implications
 
-**Both persistent registrations survive.** Office ID 3 and a future personal ID each keep their own
-credentials on their own laptop. No credential is copied, which satisfies D30. A switch uses only label
-and variable operations plus local stop/resume.
+**Both persistent registrations survive (revision 2).** Office ID 3 and a future personal ID each keep
+their own credentials on their own laptop, and **both keep `grl-exec`**, as D30 is worded. No credential
+is copied. A switch uses:
+- local gate transitions;
+- one or two CAS commits on the ownership log;
+- a local, proof-gated stop and start.
+
+No DELETE, no re-registration and no label change are involved.
 
 Refinements the owner must see:
 
-1. **OWNER DECISION REQUIRED — D30 wording.** D30 says "ONE ACTIVE AT A TIME while both share label
-   `grl-exec`". This protocol requires **`grl-exec` to be held only by the active runner**. The inactive
-   registration keeps the default labels (`self-hosted, Windows, X64`) and receives no GRL work.
-   - Usability: switching is label + variable operations; no re-registration.
-   - Safety: stronger, because server routing enforces single-active rather than process discipline alone.
-   - Cost: two label API calls per switch.
-   - Credentials: unchanged.
-   - Recovery: a missing label is fixed by one idempotent call.
-2. **Personal enrollment must register without `grl-exec`.** The current product always configures with a
-   label. Registering `grl-personal` with `grl-exec` would violate I2 immediately while office is active.
-3. **14-day auto-removal (FACT).** An inactive laptop that never connects for more than 14 days loses its
-   registration. Mitigation (PROPOSED): a label-less **standby start** of the inactive runner at least
-   every ~10 days is safe by the label argument. Otherwise, accept owner-confirmed re-registration
-   (§20 OD-D).
-4. **30-day update rule (FACT)** applies to both laptops. It interacts with the pinned-version gating
+1. **OWNER DECISION REQUIRED — OD-A (revised).** "Active" means the ownership-log holder with a
+   pass-capable gate, not the holder of `grl-exec`.
+
+   Consequence: while both runners are online, GitHub may route a job to the inactive one, which refuses
+   it. The request fails and must be re-posted. The operating rule is therefore to keep the inactive
+   runner stopped, which is now provably safe to do.
+
+   The revision-1 proposals are withdrawn: "`grl-exec` only on the active runner" and "enroll personal
+   without `grl-exec`".
+2. **14-day auto-removal (FACT).** An inactive laptop that never connects for more than 14 days loses its
+   registration. A start of the inactive runner with its gate `INACTIVE` is safe, but jobs routed to it
+   while it is online are refused.
+
+   PROPOSED: the owner runs such a keep-alive start at least every ~10 days at a quiet time. This is a
+   proposal, not approved automation (OD-D). Otherwise, accept owner-confirmed re-registration.
+3. **30-day update rule (FACT)** applies to both laptops. It interacts with the pinned-version gating
    (D22) and is not changed here.
-5. **No other workflow may target `[self-hosted]` alone** in the execution repo. A label-less standby is
-   inert only because every GRL job requires `grl-exec`. INFERENCE: the current tree has exactly one
-   workflow. The template lint should keep enforcing this.
+4. **No other workflow may target `[self-hosted]` alone** in the execution repo. The gate would refuse
+   such jobs anyway, because their workflow SHA or job name is not allowlisted.
 
 **If the owner instead chooses Candidate B (DELETE):**
 
@@ -662,6 +1092,8 @@ Refinements the owner must see:
 ---
 
 ## 15. Minimal implementation delta (not implemented here)
+
+> **SUPERSEDED by §0.9.** M1 (the GRL_ADMISSION clause) and the label APIs of M2 are not required. M4–M8 are replaced by S1–S6.
 
 **Required (M):**
 
@@ -729,6 +1161,8 @@ The private repo changes only by deploying the reviewed template (M1). App permi
 ---
 
 ## 16. Deterministic race-harness plan
+
+> **Revision 2:** the focused specifications D1-T, D2-T and D3-T in §0.4–§0.6 take precedence. The label/variable scenarios below remain useful only as negative controls.
 
 Build a discrete-event **GitHub simulator**: runs, jobs with needs/if semantics, labels, the variable,
 runner online/busy/session, assignment, and API read caches. Every event point is injectable:
@@ -805,6 +1239,8 @@ Evidence: `LOCAL_CHECKED` (Windows qualifier, D24). Not `WINDOWS_TESTED`.
 
 ## 18. Later live acceptance plan (requires separate explicit authorization; js-smoke only)
 
+> **Revision 2:** W1–W4 below are replaced by W1′–W4′ (§0.9). W5 still requires personal-enrollment authorization. Nothing is authorized.
+
 Stop points are recoverable. The office runner is ID 3. `grl-personal` is not registered until W5.
 
 | W | Setup | Action | PASS | BLOCKED/FAIL |
@@ -828,6 +1264,8 @@ No live DELETE, no 422-busy experiment and no cancellation of real work is part 
 
 ## 19. Security / secret boundaries
 
+> **Revision 2:** no label or variable writes are needed. The only new remote write is the ownership ref in a dedicated control repository (OD-G, Contents on that repo only). Gate files hold repo, run, job and epoch identifiers only, with no tokens. The gate is not a security boundary against workflow code running as the same user (A3).
+
 - No new token types. The label and runner APIs use the existing App user token with Administration
   write. The variable API needs the Variables permission (OD-B).
 - The journal and published evidence contain repo name, runner names, numeric IDs, run IDs and
@@ -841,38 +1279,47 @@ No live DELETE, no 422-busy experiment and no cancellation of real work is part 
 
 ## 20. Owner decisions required
 
-- **OD-A.** Re-interpret D30: `grl-exec` is held **only by the active runner**. Both registrations persist.
-  A personal enrollment registers without `grl-exec`.
-- **OD-B.** Grant the GitHub App the repository Actions **Variables** permission (read/write) on the
-  execution repo only, so the product can close/open and verify admission. *Alternatives:*
-  - the owner toggles `GRL_ADMISSION` manually in Settings and the product only verifies it (still needs
-    read access);
-  - E′ two-label admission (no new permission; weaker, §7);
-  - interim `GRL_AUTHORIZED_ACTORS=[]` manual switch (§8).
-- **OD-C.** Accept that requests posted while admission is closed are **skipped** (no ACK) and must be
-  re-posted after reopen.
-- **OD-D.** 14-day policy: periodic label-less standby start of the inactive laptop (PROPOSED), or accept
-  owner-confirmed re-registration after auto-removal.
-- **OD-E.** Allow **remote release** (§11.3): the personal product removes office's label while office's
-  listener stays online label-less.
-- **OD-F.** Authorize a source implementation packet (M1–M8) with independent review, then live witnesses
-  W1–W4 on office ID 3. W5 requires personal-enrollment authorization.
+All items below remain **PENDING**. No owner approval is recorded. The owner's preference for Sol as
+implementer approves none of them. Revision 2:
+
+- **OD-A (revised).** Define "active" as ownership-log holder + pass-capable local gate. Both registrations
+  keep `grl-exec`. Accept that jobs routed to an online inactive runner are refused, and keep the inactive
+  runner stopped.
+- **OD-B — withdrawn.** The Actions Variables permission is no longer needed; no `GRL_ADMISSION`
+  variable exists.
+- **OD-C.** Accept that requests arriving while no gate admits (release, pause, or an inactive-but-online
+  runner) are **refused** and must be re-posted. Downstream jobs of runs admitted on the old machine
+  that arrive after its gate closed are also refused.
+- **OD-D.** 14-day policy: an owner-run keep-alive start of the inactive laptop every ~10 days (PROPOSED,
+  not automation), or owner-confirmed re-registration after auto-removal.
+- **OD-E.** Remote release / forced takeover. It is **unavailable** in revision 2 and would need a separate
+  lease design with a bounded-clock-drift assumption plus an owner-attested "old machine gone" record.
+- **OD-F.** Authorize the Sol source-only packet (§0.9 S1, S2, S5, S6, with S3/S4 disabled), independent
+  review, and later live witnesses W1′–W4′ on office ID 3. Personal enrollment still needs its own D30
+  activation.
+- **OD-G (new).** Create a dedicated private control repository (suggested:
+  `github-runner-local-control`) and grant the GitHub App **Contents read/write on that repository only**
+  for the ownership-log ref. Without OD-G, only single-machine Pause/Resume (S1/S2) is available, and
+  cross-machine switching stays unavailable.
 - **Not recommended:** session-scoped DELETE/re-register model (§14).
 
 ## 21. Open questions (do not block the design; each has a witness or harness hook)
 
-1. When are `vars` values resolved for job `if` and re-runs? The design is independent of this (§9.4);
-   W2 measures lag.
-2. Is label removal linearizable with in-flight assignment? The design tolerates it via T4 rollback; W1
-   measures routing.
-3. What is the actual staleness bound of runner/run list responses today? `T_settle` is tunable.
-4. Do runs whose jobs are all skipped conclude `skipped` promptly, or linger `queued`? This affects drain
-   latency only.
-5. Does re-running failed jobs re-run dependents (docs silent)? The design treats any re-run as a
-   potential job creator.
-6. What is the exact GitHub App permission name for variable and label endpoints? Verify at
+Revision 2. Items 1–3 and 7 from revision 1 are no longer safety-relevant: vars timing, label
+linearizability, list staleness and DELETE semantics.
+
+1. **A1 witness.** Does the Worker see `.env` hook variables, and does a refusing `.js` hook fail the job
+   before the first default-condition step on the pinned v2.337.0 Windows runner? (Windows local proof;
+   later W1′.)
+2. **A5.** Is the GitHub ref fast-forward update atomic under concurrent PATCH? It is documented as
+   non-overwriting, and D1-T fakes it. A later live witness can issue two concurrent CAS updates against
+   a scratch ref.
+3. What is the exact App permission name for the Git refs/commits API on the control repo? Verify at
    implementation.
-7. (Not used) Is DELETE busy refusal a stable contract? It is irrelevant to the recommended protocol.
+4. Does "re-run failed jobs" re-run dependents? This is now irrelevant to safety, because every job is
+   gated.
+5. How does the owner want requests refused during a switch to be surfaced? No ACK is posted when the
+   hook refuses; only a failed run is visible.
 
 ## 22. Evidence / source appendix
 
@@ -922,5 +1369,33 @@ GitHub documentation (fetched 2026-09-27):
 - https://docs.github.com/en/actions/how-tos/manage-runners/self-hosted-runners/remove-runners
 - https://docs.github.com/en/actions/how-tos/manage-workflow-runs/re-run-workflows-and-jobs
 
-Not performed: no live runner, label, variable, workflow, DELETE, Stop Now, registration or request
-operation; no build or test run; no private-repo write.
+Revision 2 additional sources:
+
+- actions/runner `v2.337.0` (`397b032c…`):
+  - `src/Runner.Worker/JobExtension.cs`: L297–311 (actions prepared, then the job-started hook is added to
+    the pre-job steps with `always()`); L570–580 (the job-completed hook is a post-job step with
+    `always()`); L582–584 (pre-job steps come before job steps).
+  - `src/Runner.Worker/JobHookProvider.cs` L38–93: a missing file throws; the hook runs as a script
+    step.
+  - `src/Runner.Common/HostContext.cs` L812–834: `.js` hooks run on the runner's bundled Node; `.ps1`
+    uses pwsh or powershell.
+  - `src/Runner.Worker/StepsRunner.cs` L57–204: one step queue with per-step condition evaluation.
+  - `src/Runner.Listener/Program.cs` `LoadAndSetEnv`: the root `.env` is loaded.
+- Private execution repo history: `890829e`, `3ca0449`, `dfb1dfd`, `37b0f13`, `2c8da88`. Workflow blobs are
+  `71e0271ee9c1146ebcdc2ac9d982b32c1a773b5d` (×3) and `003e2825a9e5844d2237998baebfba24d4df5905`
+  (fault overlay). Each has one `always()` step: `upload-artifact` in `execute`.
+- Docs (fetched 2026-09-27):
+  - https://docs.github.com/en/actions/how-tos/manage-runners/self-hosted-runners/run-scripts — "If
+    there is any other exit code, the job will not run and will be marked as failed"; `.env`
+    configuration.
+  - https://docs.github.com/en/rest/git/refs — `force` "make sure the update is a fast-forward update …
+    not overwriting work"; 409/422.
+  - https://docs.github.com/en/actions/reference/runners/self-hosted-runners — "If the runner doesn't
+    pick up the assigned job within 60 seconds, the job is re-queued so that a new runner can accept it."
+- Disposable model: SHA-256 `35DD5C887BAC595369A173E12993943ED944516ABB25C3A5C75D5291048F21B0`. Executed
+  with Node v24.14.1; results in §0.8. It is not committed.
+
+Not performed (both revisions):
+- no live runner, label, variable, workflow, DELETE, Stop Now, registration, request or App operation;
+- no product build or test run;
+- no private-repo write.
