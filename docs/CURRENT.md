@@ -1,50 +1,48 @@
 # CURRENT — github-runner-local
 
-Updated: 2026-09-27. Phase: **GRL014_REV2_SOURCE_IMPLEMENTATION_READY; LIVE_ACTIVATION_GATED; GRL015_ACCEPTED**.
+Updated: 2026-09-27. Phase: **GRL014_PR24_INTEGRATED_REVIEW_READY; LIVE_ACTIVATION_GATED; GRL015_ACCEPTED**.
 
 ## Authority
 
 - Canonical branch: main; Control Tower coordinates on Issue #1.
-- Handoff: `docs/control-tower/handoffs/GRL-20260927-REV2-SOL-SOURCE-READY-V51.md`.
-- Sentinel: `END_OF_GRL_HANDOFF key=GRL-20260927-REV2-SOL-SOURCE-READY-V51 sections=5`.
-- Active task: Issue #18 / GRL-014 revision-2 SOURCE implementation.
-- Active packet: Issue #18 comment **5853140232**, through `END_OF_GRL014_SOURCE_PACKET key=GRL014-REV2-SOL-SOURCE-20260927 sections=6`.
+- Handoff: `docs/control-tower/handoffs/GRL-20260927-PR24-INTEGRATED-REVIEW-V52.md`.
+- Sentinel: `END_OF_GRL_HANDOFF key=GRL-20260927-PR24-INTEGRATED-REVIEW-V52 sections=5`.
+- Active task: Issue #18 / GRL-014 integrated review of PR #24.
+- Active review packet: Issue #18 comment **`5853583451`**, FULL through `END_OF_GRL014_REVIEW_PACKET key=GRL014-PR24-D0188B8-INTEGRATED-REVIEW-20260927 sections=6`.
 
-## Source baseline, not a live PASS
+## Candidate
 
-CT disposition: `GRL014_REV2_ACCEPTED_AS_SOURCE_BASELINE_WITH_CONSTRAINTS`.
+Implementation DRAFT PR #24:
+- branch `feat/grl014-job-gate`
+- exact head `d0188b845d5cdc01542c4fc12cd63fce37ab3a2f`
+- base `d0bb69f98d37ffff28b1af6769a8c6b194e00592`
+- one commit / 20 changed paths
+- implementation handoff `5853397624`
+- implementer claim released by `5853404166`.
 
-Design reference: DRAFT PR #23, head `ccd580aec36432c4b40eeedecf3a04fab17f9a97`, `docs/design/GRL014_SAFE_SWITCHING_PROTOCOL.md`. Revision-2 §0 supersedes revision-1 label/variable/timer fencing. Designer handoff `5853104447`; designer release `5853105794`.
+Design reference DRAFT PR #23 remains at `ccd580aec36432c4b40eeedecf3a04fab17f9a97`; revision-2 §0 controls.
 
-A NEW local Sol implementation worker may take one broad claim after the CT release and ownership check. No further Opus research round is required first. PR #23 stays draft/unmerged; it is not the source implementation PR.
+## Review gate
 
-## Implementation
+ONE independent reviewer now checks the integrated source/design/test candidate.
 
-Use a separate worktree from exact fresh main, preferred branch `feat/grl014-job-gate`, and ONE new DRAFT source PR.
+Implementer reports LOCAL_CHECKED 575 passing affected tests plus clean warnings-as-errors build/lint/diff checks. These are not independent evidence yet.
 
-Implement S1/S2/S5/S6 (local hooks/gate/ledger/intent/configuration, proof-gated local lifecycle, lint and tests). S3/S4 may be source/fake-tested only behind a disabled capability. Do not wait for OD-G to write this source; do not create a control repo or activate cross-machine behavior.
+Review must especially verify intent-first ordering, Worker lifetime stop proof, fail-closed gate/configuration, rerun/historical-SHA refusal, stale-artifact/pre/post inventory, pending ownership-publication fences, disabled live capability, and test quality.
 
-Packet constraints include actual Worker-exit evidence beyond `.done`, hook files outside the extracted runner directory, recoverable `.env` handling, cross-process handshake tests, pending ownership-publication fences, and stale-artifact/rerun/pre/post-step refusal tests. These constraints are requirements to prove, not evidence already obtained.
+A1 real pinned Worker inheritance and A5 live ref semantics remain pending and do not become source PASS merely from source inspection.
 
-Keep the feature disabled by default in normal live composition, with explicit synthetic/test activation. No automatic migration of existing roots. A gate-enabled instance fails closed if its prerequisites are unavailable.
+No live runner operation at this gate.
 
-The local goal finishes at SOURCE_IMPLEMENTATION_REVIEW_READY, DRAFT PR, exact-head evidence and claim release. One independent integrated review and CT merge/live gate come later. No self-review or waiting-loop after handoff.
+## Sequence
 
-## Preserve completed office work
+**SEQUENTIAL:** independent PASS -> CT merge/proof decision -> separately authorized synthetic/Windows/live proof.
 
-G1 and GRL-015 remain accepted; do not rerun them without a concrete regression.
+No personal enrollment, control repo, App permission, live hooks/.env, private workflow changes or office ID 3 operations.
 
-- Office identity: `grl-office` ID 3; last witnessed runner version 2.337.0. ID 2 is removed/historical.
-- Proven product build source: `1e74ffdbe9d64dc96bb30007c72af80c625b6946`, containing PR #22 merge `34ccb0c999873418a5077bd3da793a460901a968`.
-- Private main at accepted evidence: `2c8da8834e785ba012001b9427bd68380401bec7`.
-- Operator evidence: `5845412219` and `5852213379`; CT acceptance: `5852242726`.
+## Safety
 
-The office product, launcher, roots and running state are not targets of source development. Keep build outputs separate.
+ARCHIVE/CHECKPOINT FIRST. Preserve old checkouts/worktrees/notes and all accepted office evidence.
 
-## Gates and safety
-
-Only SOURCE work is open. OD-A/C/D and the live part of OD-F remain pending; OD-G is pending; OD-B is withdrawn. No personal enrollment, control repo, new App permissions, remote takeover or scheduled keep-alive.
-
-No live hook/.env installation, private workflow/label/variable changes, job dispatch/rerun, Stop Now, reboot, service/security/sleep changes, global auth/env reset or GitHub-hosted Actions.
-
-ARCHIVE/CHECKPOINT FIRST. Preserve old checkout/worktrees/notes and existing configuration. No force-push, destructive cleanup or credential exposure.
+G1 and GRL-015 remain accepted. ID 3 stays untouched; ID 2 is historical.
+No hosted Actions, service/autostart/security/sleep changes, global auth/env reset, destructive cleanup or credential exposure.
