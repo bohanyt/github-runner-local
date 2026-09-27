@@ -54,29 +54,73 @@ function stepMapping(text, errors) {
 const scalar = value => value && ((value.startsWith('"') && value.endsWith('"')) ||
   (value.startsWith("'") && value.endsWith("'"))) ? value.slice(1, -1) : value;
 
+// Consume the complete jobs mapping, not just familiar steps found elsewhere.
+// Only the four reviewed block job entries and block steps collections are supported.
+function jobsSteps(workflow, errors) {
+  const expected = ['admit', 'execute', 'report', 'verdict'];
+  const jobs = new Map(), steps = [];
+  let inside = false, containers = 0, job, inSteps = false, current;
+  const refuse = () => errors.push('GATE_STEP_GRAMMAR');
+  const flush = () => {
+    if (current) steps.push({ job: job.name, text: current.join('\n').trimEnd() });
+    current = null;
+  };
+  const finishJob = () => {
+    flush();
+    if (job && (job.collections !== 1 || job.items === 0)) refuse();
+    job = null; inSteps = false;
+  };
+  for (const line of normalize(workflow).split('\n')) {
+    if (!line.trim() || line.trimStart().startsWith('#')) continue;
+    if (line === 'jobs:') {
+      finishJob(); inside = true; containers++;
+      if (containers !== 1) refuse();
+      continue;
+    }
+    // Alternate top-level jobs keys/containers must not supersede the reviewed map.
+    if (/^(?:jobs|"jobs"|'jobs')\s*:/.test(line)) refuse();
+    if (!line.startsWith(' ') && !/^[A-Za-z][A-Za-z0-9-]*:/.test(line)) refuse();
+    if (!inside) continue;
+    const indent = /^ */.exec(line)[0].length;
+    if (indent === 0) {
+      finishJob(); inside = false;
+      if (!/^[A-Za-z][A-Za-z0-9-]*:/.test(line)) refuse();
+      continue;
+    }
+    if (/^ *\t/.test(line) || indent < 2 || indent % 2 !== 0) { refuse(); continue; }
+    if (indent === 2) {
+      finishJob();
+      const header = /^  (admit|execute|report|verdict):$/.exec(line);
+      if (!header) { refuse(); continue; }
+      if (jobs.has(header[1])) refuse();
+      job = { name: header[1], collections: 0, items: 0 };
+      jobs.set(job.name, job);
+      continue;
+    }
+    if (!job) { refuse(); continue; }
+    if (indent === 4) {
+      flush(); inSteps = false;
+      if (line === '    steps:') {
+        job.collections++; inSteps = true;
+        if (job.collections !== 1) refuse();
+      } else if (!/^    (?:if|runs-on|timeout-minutes|permissions|outputs|needs):(?: .+)?$/.test(line)) refuse();
+      continue;
+    }
+    if (!inSteps) continue; // Nested values of the supported job fields are not steps.
+    if (/^      - /.test(line)) { flush(); current = [line]; job.items++; }
+    else if (/^        /.test(line) && current) current.push(line);
+    else refuse();
+  }
+  finishJob();
+  if (containers !== 1 || expected.some(name => !jobs.has(name))) refuse();
+  return steps;
+}
+
 // Deliberately a narrow grammar for this fixed template, not a permissive general YAML interpreter.
 // Unsupported conditions/layouts/action metadata fail closed and require a new inventory decision.
 export function gateInventory(workflow, metadata = loadActionMetadata()) {
   const errors = [];
-  const lines = normalize(workflow).split('\n');
-  let job, inSteps = false, steps = [], current;
-  const stepJobs = new Set();
-  const flush = () => { if (current) steps.push({ job, text: current.join('\n').trimEnd() }); current = null; };
-  for (const line of lines) {
-    const match = /^  ([a-z]+):$/.exec(line);
-    if (match) { flush(); job = match[1]; inSteps = false; }
-    if (line === '    steps:') {
-      if (!['admit', 'execute', 'report', 'verdict'].includes(job) || stepJobs.has(job)) errors.push('GATE_STEP_GRAMMAR');
-      stepJobs.add(job); inSteps = true; continue;
-    }
-    if (/^    (?:steps|"steps"|'steps')\s*:/.test(line)) errors.push('GATE_STEP_GRAMMAR');
-    if (!inSteps || !line.trim()) continue;
-    if (/^      - /.test(line)) { flush(); current = [line]; }
-    else if (/^        /.test(line) && current) current.push(line);
-    else errors.push('GATE_STEP_GRAMMAR');
-  }
-  flush();
-  if (stepJobs.size !== 4) errors.push('GATE_STEP_GRAMMAR');
+  const steps = jobsSteps(workflow, errors);
   let exceptions = 0;
   for (const step of steps) {
     const mapping = stepMapping(step.text, errors);

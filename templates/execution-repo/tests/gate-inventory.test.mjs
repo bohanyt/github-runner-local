@@ -1,11 +1,34 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { lintSource } from '../tools/lint.mjs';
+import { readFileSync, readdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { schemaDrift } from '../tools/schema-check.mjs';
+import { lintSource, changedPaths } from '../tools/lint.mjs';
 import { gateInventory, loadActionMetadata } from '../tools/gate-inventory.mjs';
 const workflow = readFileSync(new URL('../.github/workflows/grl-dispatch.yml', import.meta.url), 'utf8').replaceAll('\r\n', '\n');
+// Match the complete lintTemplate inputs; fixtures replace only in-memory workflow text.
+const readTemplate = name => readFileSync(new URL('../' + name, import.meta.url), 'utf8');
+const actionMain = name => readTemplate('.github/actions/' + name + '/main.mjs');
+const libraryNames = readdirSync(new URL('../lib/', import.meta.url)).filter(name => name.endsWith('.mjs'));
+const lintInputs = {
+  profiles: readdirSync(new URL('../profiles/', import.meta.url)).filter(name => name.endsWith('.json'))
+    .map(name => readTemplate('profiles/' + name)),
+  runAction: actionMain('grl-run-profile'), reportLibrary: readTemplate('lib/reporting.mjs'),
+  verdictAction: actionMain('grl-verdict'),
+  runtimeSources: ['grl-admit', 'grl-report', 'grl-run-profile', 'grl-verdict'].map(actionMain)
+    .concat(libraryNames.map(name => readTemplate('lib/' + name))),
+  changedPaths: changedPaths(fileURLToPath(new URL('../../../', import.meta.url))),
+  drift: schemaDrift(fileURLToPath(new URL('../', import.meta.url)))
+};
+const fullLint = candidate => lintSource({ ...lintInputs, workflow: candidate });
+const rejectsGrammar = candidate => {
+  assert.ok(gateInventory(candidate).includes('GATE_STEP_GRAMMAR'));
+  assert.ok(fullLint(candidate).includes('GATE_STEP_GRAMMAR'));
+};
+
 test('exact unconditional inventory and pinned action pre/post metadata', () => {
   assert.deepEqual(gateInventory(workflow), []);
+  assert.deepEqual(fullLint(workflow), []);
   const metadata = loadActionMetadata();
   assert.equal(Object.keys(metadata).length, 7);
   assert.match(metadata['actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683'], /post:/);
@@ -68,7 +91,7 @@ for (const [name, replacement] of [
   assert.ok(workflow.includes(profileStep));
   const candidate = workflow.replace(profileStep, replacement);
   assert.ok(gateInventory(candidate).includes('GATE_UNCONDITIONAL_STEP'));
-  assert.ok(lintSource({ workflow: candidate, profiles: [], runAction: '', reportLibrary: '', verdictAction: '' })
+  assert.ok(fullLint(candidate)
     .includes('GATE_UNCONDITIONAL_STEP'));
 });
 
@@ -82,11 +105,64 @@ for (const [name, replacement] of [
   ['alias merge', profileStep + '\n        <<: *unsafe'],
   ['bare sequence mapping', `      -\n        if: always()\n        uses: ./grl-trusted/.github/actions/grl-run-profile`]
 ]) test('unsupported step grammar: ' + name, () => {
-  assert.ok(gateInventory(workflow.replace(profileStep, replacement)).includes('GATE_STEP_GRAMMAR'));
+  rejectsGrammar(workflow.replace(profileStep, replacement));
 });
 
 test('unsupported steps collection layout cannot disappear from inventory', () => {
   for (const key of ['"steps":', "'steps':", 'steps: [{if: always()}]'])
-    assert.ok(gateInventory(workflow.replace('    steps:', '    ' + key)).includes('GATE_STEP_GRAMMAR'));
+    rejectsGrammar(workflow.replace('    steps:', '    ' + key));
   assert.deepEqual(gateInventory(workflow), []); // Exact reviewed artifact exception remains allowed.
+});
+
+
+const beforeAdmit = child => workflow.replace('jobs:\n', 'jobs:\n' + child + '\n');
+const flowJob = condition => `  surprise: {runs-on: [self-hosted, Windows, X64, grl-exec], steps: [{uses: ./.github/actions/grl-verdict, if: ${condition}}]}`;
+for (const condition of ['always()', 'failure()', 'cancelled()'])
+  test('entire jobs mapping rejects reviewer flow surprise before admit: ' + condition, () => {
+    rejectsGrammar(beforeAdmit(flowJob(condition)));
+  });
+
+for (const [name, child] of [
+  ['extra block job', '  surprise:\n    runs-on: [self-hosted, Windows, X64, grl-exec]\n    steps:\n      - uses: ./.github/actions/grl-verdict\n        if: always()'],
+  ['flow expected job', '  admit: {runs-on: [self-hosted, Windows, X64, grl-exec], steps: [{uses: ./.github/actions/grl-verdict, if: always()}]}'],
+  ['double quoted unexpected key', '  "surprise": {}'],
+  ['single quoted unexpected key', "  'surprise': {}"],
+  ['quoted expected key', '  "admit":'],
+  ['explicit mapping key', '  ? surprise\n  : {}'],
+  ['merge alias entry', '  <<: *unexpected'],
+  ['aliased job entry', '  surprise: *unexpected'],
+  ['anchored expected job', '  admit: &unexpected'],
+  ['ambiguous one-space indentation', ' surprise: {}'],
+  ['ambiguous three-space indentation', '   surprise: {}'],
+  ['ambiguous four-space extra header', '    surprise: {}'],
+  ['tab indentation', '\tsurprise: {}'],
+  ['unknown direct value', '  unexpected'],
+  ['direct flow mapping', '  {surprise: {steps: []}}'],
+  ['direct block scalar', '  |\n    surprise'],
+  ['duplicate expected job', '  admit:\n    steps:\n      - uses: ./.github/actions/grl-verdict']
+]) test('unsupported jobs child: ' + name, () => rejectsGrammar(beforeAdmit(child)));
+
+for (const [name, mutate] of [
+  ['flow jobs container', text => text.replace('jobs:', 'jobs: {surprise: {steps: []}}')],
+  ['block scalar jobs container', text => text.replace('jobs:', 'jobs: |')],
+  ['aliased jobs container', text => text.replace('jobs:', 'jobs: *unexpected')],
+  ['quoted jobs key', text => text.replace('jobs:', '"jobs":')],
+  ['missing jobs key', text => text.replace('jobs:\n', '')],
+  ['duplicate jobs container', text => text + '\njobs:\n'],
+  ['later quoted jobs override', text => text + '\n"jobs": {surprise: {steps: []}}\n'],
+  ['escaped quoted jobs override after another top-level key', text => text + '\nenv: {}\n"\\x6aobs": {surprise: {steps: []}}\n'],
+  ['duplicate steps collection', text => text.replace('    steps:', '    steps:\n      - uses: ./.github/actions/grl-verdict\n    steps:')],
+  ['missing one job steps collection', text => text.replace('    steps:', '    outputs:')],
+  ['empty job steps collection', text => text.replace(/(  admit:\n[\s\S]*?    steps:)[\s\S]*?(?=\n  execute:)/, '$1\n')]
+]) test('unsupported jobs container or collection: ' + name, () => rejectsGrammar(mutate(workflow)));
+
+test('extra job cannot disappear between jobs or after the final job', () => {
+  rejectsGrammar(workflow.replace('  execute:', flowJob('always()') + '\n  execute:'));
+  rejectsGrammar(workflow + '\n' + flowJob('always()') + '\n');
+});
+
+test('exact reviewed workflow and upload exception remain valid through full lint', () => {
+  assert.equal((workflow.match(/^        if: always\(\)$/gm) ?? []).length, 1);
+  assert.deepEqual(gateInventory(workflow), []);
+  assert.deepEqual(fullLint(workflow), []);
 });
