@@ -1,42 +1,40 @@
 # CURRENT — github-runner-local
 
-Updated: 2026-09-27. Phase: **GRL014_PR24_F2_ONLY_DELTA_REVIEW_READY; LIVE_ACTIVATION_GATED; GRL015_ACCEPTED**.
+Updated: 2026-09-27. Phase: **GRL014_SOURCE_MERGED; A1_PROOF_PENDING; A5_ODG_GATED; LIVE_ACTIVATION_GATED; GRL015_ACCEPTED**.
 
 ## Authority
 
 - Canonical branch: main; Control Tower coordinates on Issue #1.
-- Handoff: `docs/control-tower/handoffs/GRL-20260927-PR24-F2-ONLY-DELTA-REVIEW-V56.md`.
-- Sentinel: `END_OF_GRL_HANDOFF key=GRL-20260927-PR24-F2-ONLY-DELTA-REVIEW-V56 sections=5`.
-- Active task: tiny independent F2-only rereview of PR #24.
-- Active review packet: Issue #18 comment **`5855740145`**, FULL through `END_OF_GRL014_F2_REVIEW_PACKET key=GRL014-PR24-90DF67D-F2-ONLY-REVIEW-20260927 sections=6`.
+- Handoff: `docs/control-tower/handoffs/GRL-20260927-SOURCE-MERGED-A1-NEXT-V57.md`.
+- Sentinel: `END_OF_GRL_HANDOFF key=GRL-20260927-SOURCE-MERGED-A1-NEXT-V57 sections=5`.
+- Source acceptance: Issue #18 comment **`5855825625`**, FULL through `END_OF_GRL014_SOURCE_ACCEPTANCE key=GRL014-PR24-MERGED-20260927 sections=5`.
 
-## Candidate
+## Merged source
 
-PR #24:
-- old head `1c3527de9e4752169aaeeb23cd67f62ff5daca10`
-- corrected head `90df67d1d9bdf7b1987fcaee27056510bd2240e4`
-- exact delta: one commit, two files only:
-  - `templates/execution-repo/tools/gate-inventory.mjs`
-  - `templates/execution-repo/tests/gate-inventory.test.mjs`.
+PR #24 exact reviewed head `90df67d1d9bdf7b1987fcaee27056510bd2240e4` merged at
+`25b1ecf60baa9fc9ef132348f9e771f44b8cb7b5`.
 
-Correction handoff `5855653545`; correction claim released by `5855658703`.
+Independent source review chain is complete. F1/F2/F3/F4 are accepted closed; no further source correction loop absent a new regression.
 
-## Review gate
+PR #23 remains an unmerged draft design reference at `ccd580aec36432c4b40eeedecf3a04fab17f9a97`.
 
-Retain F1/F3/F4 PASS and prior accepted unchanged-source conclusions. Review only F2 jobs-mapping inventory closure.
+## Remaining proof
 
-Implementer reports 55/55 targeted inventory, 173/173 full template, lint/diff PASS. These remain implementer evidence until independently reproduced.
+A1 PENDING / DEFERRED_LIVE_PROOF: actual pinned Windows Worker inheritance of runner-root `.env` hook variables and real hook refusal ordering.
 
-Windows-local review is not required unless scope unexpectedly expands beyond Node inventory/tests.
+A5 PENDING / DEFERRED_LIVE_PROOF: live Git-ref CAS behavior; also gated by pending OD-G.
 
-A1/A5 remain DEFERRED_LIVE_PROOF.
+Normal live composition and cross-machine capability remain disabled. No existing root is auto-migrated.
 
-## Sequence
+## Next
 
-**SEQUENTIAL:** F2-only delta PASS -> CT merge/proof decision -> A1/A5 proof -> later live acceptance.
+**SEQUENTIAL:** smallest honest A1 witness -> CT proof adjudication -> later live gate. A5 waits for explicit OD-G.
+
+Prefer isolated pinned-runner A1 proof that genuinely exercises Listener -> Worker inheritance. If that cannot prove A1, office ID 3 requires a separate owner-authorized checkpointed witness before any root/.env/hook/restart/job change.
 
 ## Safety
 
 G1/GRL-015 remain accepted. Office ID 3 stays untouched.
-No live hook/.env changes, jobs, Stop Now/reboot, private/control repo writes, App permission, personal enrollment or hosted Actions.
+No control repo/App permission/personal enrollment/remote takeover/scheduled keep-alive.
+No hosted Actions, service/autostart/security/sleep changes, global auth/env reset, destructive cleanup or credential exposure.
 ARCHIVE/CHECKPOINT FIRST.
