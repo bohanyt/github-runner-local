@@ -1,37 +1,41 @@
 # CURRENT — github-runner-local
 
-Updated: 2026-09-27. Phase: **GRL014_PR24_F1_F4_CORRECTION_READY; LIVE_ACTIVATION_GATED; GRL015_ACCEPTED**.
+Updated: 2026-09-27. Phase: **GRL014_PR24_F1_F4_DELTA_REVIEW_READY; LIVE_ACTIVATION_GATED; GRL015_ACCEPTED**.
 
 ## Authority
 
 - Canonical branch: main; Control Tower coordinates on Issue #1.
-- Handoff: `docs/control-tower/handoffs/GRL-20260927-PR24-F1-F4-CORRECTION-V53.md`.
-- Sentinel: `END_OF_GRL_HANDOFF key=GRL-20260927-PR24-F1-F4-CORRECTION-V53 sections=5`.
-- Active task: Issue #18 / PR #24 focused F1–F4 correction.
-- Active correction packet: Issue #18 comment **`5854201198`**, FULL through `END_OF_GRL014_CORRECTION_PACKET key=GRL014-PR24-F1-F4-20260927 sections=6`.
+- Handoff: `docs/control-tower/handoffs/GRL-20260927-PR24-F1-F4-DELTA-REVIEW-V54.md`.
+- Sentinel: `END_OF_GRL_HANDOFF key=GRL-20260927-PR24-F1-F4-DELTA-REVIEW-V54 sections=5`.
+- Active task: focused independent delta rereview of PR #24 F1–F4 correction.
+- Active review packet: Issue #18 comment **`5855358779`**, FULL through `END_OF_GRL014_DELTA_REVIEW_PACKET key=GRL014-PR24-1C3527D-F1-F4-DELTA-REVIEW-20260927 sections=6`.
 
-## Review disposition
+## Candidate
 
-Integrated review Issue #18 `5853961376` returned `NEEDS_GRL014_SOURCE_CORRECTION` at exact old PR #24 head `d0188b845d5cdc01542c4fc12cd63fce37ab3a2f`.
+PR #24 corrected head:
+- old reviewed head `d0188b845d5cdc01542c4fc12cd63fce37ab3a2f`
+- new head `1c3527de9e4752169aaeeb23cd67f62ff5daca10`
+- same branch `feat/grl014-job-gate`
+- one correction commit / eight approved paths / +374/-15.
 
-Accepted blockers:
-- F1 SOURCE_SAFETY: orphaned same-runner Worker can be missed for non-canonical/trailing-separator runner path;
-- F2 DESIGN_CONFORMANCE: lint misses equivalent unconditional `if` layouts;
-- F3 DESIGN_CONFORMANCE: stale `gate.lock` disables warned Stop Now;
-- F4 TEST_EVIDENCE: descendant/image detection rules mask one another in tests.
+Correction handoff `5855327021`; correction claim released by `5855332496`.
 
-Reviewer claim `5853704407` released by `5853963616`.
+## Review gate
 
-## Correction
+Focused rereview checks only F1–F4 closure and regression risk. Prior integrated review conclusions for unchanged source are retained.
 
-SAME Sol branch / SAME DRAFT PR #24, normal fast-forward only.
+Implementer reports 352 passing final tests plus real harmless orphan process/stale-lock/mutation evidence. These remain implementer evidence until independently reproduced.
 
-Correct only F1–F4 plus focused tests. Retain accepted integrated-review conclusions for unchanged source. Do not reopen PR #23 design research, A1/A5 live proof or unrelated nonblocking notes.
+Prefer reviewer who is neither Sol implementer nor PR #23 design author.
 
-After correction handoff/release: ONE focused delta rereview, preferably by a reviewer who is neither Sol implementer nor design author.
+A1/A5 remain DEFERRED_LIVE_PROOF and are outside this delta PASS.
+
+## Sequence
+
+**SEQUENTIAL:** focused delta PASS -> CT merge/proof decision -> separately authorized A1/A5 proof -> later live acceptance.
 
 ## Safety
 
 G1/GRL-015 remain accepted. Office ID 3 stays untouched.
-No live hook/.env change, job, Stop Now/reboot, private/control repo mutation, App permission, personal enrollment or hosted Actions.
+No live hook/.env changes, jobs, Stop Now/reboot, private/control repo writes, App permission, personal enrollment or hosted Actions.
 ARCHIVE/CHECKPOINT FIRST.
