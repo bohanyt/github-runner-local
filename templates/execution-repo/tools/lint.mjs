@@ -4,11 +4,13 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validateProfile } from '../lib/protocol.mjs';
 import { schemaDrift } from './schema-check.mjs';
+import { gateInventory } from './gate-inventory.mjs';
 
 export function lintSource({ workflow, profiles, runAction, reportLibrary,
-  verdictAction, runtimeSources = [], changedPaths = [], drift = [] }) {
+  verdictAction, runtimeSources = [], changedPaths = [], drift = [], actionMetadata }) {
   const errors = [];
   const requireText = (condition, code) => { if (!condition) errors.push(code); };
+  errors.push(...gateInventory(workflow, actionMetadata));
 
   const onBlock = /^on:\s*\r?\n([\s\S]*?)(?=^permissions:)/m.exec(workflow)?.[1] ?? '';
   requireText(/^\s{2}issue_comment:\s*\r?\n\s{4}types:\s*\[created\]\s*$/m.test(onBlock) &&
@@ -85,7 +87,8 @@ export function lintSource({ workflow, profiles, runAction, reportLibrary,
     try { validateProfile(bytes); } catch { errors.push('PROFILE'); }
   }
   for (const path of changedPaths)
-    requireText(path.replaceAll('\\', '/').startsWith('templates/execution-repo/'), 'WRITE_SCOPE');
+    requireText(/^(templates\/execution-repo\/|src\/Grl.Integration\/JobGate\/|tests\/job-gate\/|docs\/dev\/GRL014-SOURCE\.md$|tests\/Grl.Integration.Tests\/JobGateTests\.cs$|src\/Grl.Integration\/(JobGateSession\.cs|OwnedWorkerObservation\.cs|Grl.Integration\.csproj)$)/
+      .test(path.replaceAll('\\', '/')), 'WRITE_SCOPE');
   for (const name of drift) errors.push('SCHEMA_DRIFT_' + name);
   return [...new Set(errors)];
 }

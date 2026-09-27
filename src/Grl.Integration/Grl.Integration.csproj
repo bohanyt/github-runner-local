@@ -5,6 +5,7 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <EmbeddedResource Include="JobGate\*.*" />
     <ProjectReference Include="..\Grl.Core\Grl.Core.csproj" />
     <ProjectReference Include="..\Grl.App.Presentation\Grl.App.Presentation.csproj" />
   </ItemGroup>
