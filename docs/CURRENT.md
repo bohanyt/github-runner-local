@@ -1,31 +1,31 @@
 # CURRENT — github-runner-local
 
-Updated: 2026-09-27. Phase: **GRL014_SOURCE_MERGED; A1_ID3_RETRY_AUTHORIZED; A5_ODG_GATED; GRL015_ACCEPTED**.
+Updated: 2026-09-27. Phase: **GRL014_SOURCE_MERGED; A1_ID3_NETWORK_GATED_RETRY_AUTHORIZED; A5_ODG_GATED; GRL015_ACCEPTED**.
 
 ## Authority
 
 - Canonical branch: main; Control Tower coordinates on Issue #1.
-- Handoff: `docs/control-tower/handoffs/GRL-20260927-A1-ID3-INHERITED-ACL-RETRY-V59.md`.
-- Sentinel: `END_OF_GRL_HANDOFF key=GRL-20260927-A1-ID3-INHERITED-ACL-RETRY-V59 sections=5`.
-- Active task: retry owner-authorized A1 live witness on existing office runner ID3.
-- Active packet: Issue #18 **`5856442213`**, FULL through `END_OF_GRL014_A1_RETRY_PACKET key=GRL014-A1-ID3-INHERITED-ACL-RETRY-20260927 sections=6`.
+- Handoff: `docs/control-tower/handoffs/GRL-20260927-A1-ID3-NETWORK-GATED-RETRY-V60.md`.
+- Sentinel: `END_OF_GRL_HANDOFF key=GRL-20260927-A1-ID3-NETWORK-GATED-RETRY-V60 sections=5`.
+- Active task: network-gated successor retry of owner-authorized A1 live witness on existing office runner ID3.
+- Active packet: Issue #18 **`5857096676`**, FULL through `END_OF_GRL014_A1_NETWORK_RETRY_PACKET key=GRL014-A1-ID3-NETWORK-GATED-RETRY-20260927 sections=6`.
 
-## Prior blocked attempt
+## Prior attempt
 
-Issue #18 `5856233967`: checkpoint ACL customization failed before mutation; zero witness requests; ID3/root/.env/Listener unchanged.
+Issue #18 `5857026595`: checkpoint/rollback PASS; request #1 cancelled before execute hook because codeload action download timed out. Request #2 not posted.
+
+Retain real integration evidence for admit/report/verdict and admit hook-before-checkout ordering.
 
 ## Retry rule
 
-Use a NEW owner-controlled checkpoint directory with EXISTING inherited permissions unchanged. Checkpoint validity comes from exact byte/hash/existence/attribute capture plus successful read-back verification.
+Before any live mutation/request, exact pinned action archive downloads must pass two consecutive scratch-download rounds. After install/restart, repeat one round before request #1. Do not alter runner action cache or network/system settings.
 
-Do NOT use Set-Acl, icacls, change ownership, repair domain trust or alter security policy.
+Opus local Windows preferred. Product/wizard starts/stops/resumes are owner-performed from Explorer/desktop only, never from agent shell.
 
-Fresh local Windows Opus is the preferred operator.
-
-After checkpoint PASS, previous A1 live scope remains: same ID3, temporary hooks/.env, idle Listener restart, exactly two js-smoke requests PASS then REFUSE-execute, byte-exact restore.
+Same ID3, exactly two new js-smoke requests maximum if prerequisites hold, byte-exact restore.
 
 ## Safety
 
 A5/OD-G, personal enrollment and cross-machine switching remain unauthorized.
-No re-registration/removal, reboot, workflow/profile mutation, third request or hosted Actions.
+No re-registration/removal, reboot, workflow/profile mutation, third request, proxy/DNS/firewall/domain/security changes or hosted Actions.
 ARCHIVE/CHECKPOINT FIRST.
