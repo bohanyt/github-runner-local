@@ -1,32 +1,34 @@
 # CURRENT — github-runner-local
 
-Updated: 2026-09-28. Phase: **GRL014_SOURCE_MERGED; SECOND_DEVICE_REPRODUCES_REPORTED; A1_NETWORK_BLOCKED; OWNER_AFK_HOLD; A5_ODG_GATED; GRL015_ACCEPTED**.
+Updated: 2026-09-28. Phase: **GRL014_SOURCE_MERGED; A1_TEMP_NO_EXTERNAL_ACTIONS_OWNER_DECISION; A5_ODG_GATED; GRL015_ACCEPTED**.
 
 ## Authority
 
 - Canonical branch: main; Control Tower coordinates on Issue #1.
-- Handoff: `docs/control-tower/handoffs/GRL-20260928-SECOND-DEVICE-REPRODUCES-AFK-V63.md`.
-- Sentinel: `END_OF_GRL_HANDOFF key=GRL-20260928-SECOND-DEVICE-REPRODUCES-AFK-V63 sections=5`.
-- CT evidence record: Issue #18 **`5858205161`**, through `END_OF_GRL_HANDOFF key=GRL014-SECOND-DEVICE-REPRODUCES-OWNER-AFK-20260928 sections=5`.
+- Handoff: `docs/control-tower/handoffs/GRL-20260928-A1-NO-CODELOAD-PROPOSAL-V64.md`.
+- Sentinel: `END_OF_GRL_HANDOFF key=GRL-20260928-A1-NO-CODELOAD-PROPOSAL-V64 sections=5`.
+- Active proposal: Issue #18 **`5860607984`**, FULL through `END_OF_GRL014_A1_NO_CODELOAD_PROPOSAL key=GRL014-A1-TEMP-NO-EXTERNAL-ACTIONS-20260928 sections=6`.
 
-## Second-device result
+## Diagnosis
 
-The owner requested the local-only diagnostic, confirmed same office Wi-Fi/SSID in chat, and forwarded its result. V62's pre-test approval pointer is superseded by this record; no retroactive worker claim or formal approval-token comment is invented.
+Runner laptop and second device on the same office network both reproduce intermittent codeload mid-body stalls while raw.githubusercontent.com control is healthy. The failure is therefore not unique to the runner laptop. No specific company policy/security product/router/ISP/codeload cause has been proved.
 
-Owner-forwarded LOCAL_CHECKED report: codeload 6/10 complete, 4/10 mid-body HTTP-200/curl-28 timeouts; raw control 10/10 complete. One completed codeload transfer took 74.395 seconds. Reported hash consistency and unchanged network context are not independently re-measured by CT; raw scratch evidence has not been inspected.
+Owner reports the second device cannot use an independent network, so that A/B path is unavailable.
 
-Classification retained: **SECOND_DEVICE_REPRODUCES**. Shared office-network/upstream codeload path is a stronger hypothesis than a problem unique to the runner laptop. No specific policy, security software or infrastructure cause is established.
+## Proposed A1 path
 
-## Owner AFK hold
+Propose a temporary private execution-repo workflow with zero external `uses:` actions and one harmless built-in shell marker step. This decouples the remaining A1 proof from codeload/action downloads.
 
-The owner is AFK/asleep. No new worker, A1 retry, GRL request, hook/.env mutation, product/runner stop or restart, network switch, cache seed, security/ACL change or unattended polling is authorized by this update.
+PASS: hook exit 0 then marker step executes.
+REFUSE: execute/witness hook exit 73 and marker step does not execute.
 
-Leave office ID 3 untouched; its last accepted restored online/idle state is from `5857287220`, not a fresh CT observation. Preserve all checkpoint/proof files, worktrees and device-2 scratch evidence.
+No execution is authorized yet.
 
-## Retained progress and next decision
+## Owner decision
 
-G1, GRL-015 and PR #24 source acceptance remain complete. A1 execute PASS/profile and execute refusal remain pending; A5/OD-G and personal enrollment remain gated.
+Approval token:
+`APPROVE_TEMP_NO_EXTERNAL_ACTIONS_A1_WITNESS`
 
-After owner return, proposed next discriminator is the same second device and existing bounded probe on an owner-approved independent connection, leaving the runner laptop untouched. Not dispatched now. No need to repeat another long same-network/protocol campaign or source-review loop.
+## Safety
 
-Do not ask the sleeping owner for more clicks or approval tokens. No live or scheduled operation has been started by this CT publication.
+Office ID3, `.env`, product and private workflow remain untouched until approval. A5/OD-G/personal enrollment/cross-machine switching remain unauthorized.
