@@ -395,3 +395,18 @@ test('D1-T all twenty send/deliver/activate interleavings preserve a single pass
     }
   }
 });
+
+
+test('lock-independent emergency evidence fences hooks, startup and activation without fabricating state', async t => {
+  const f = await fixture(t); await active(f.directory);
+  const original = fs.readFileSync(path.join(f.directory, 'state.json'));
+  // A partially written fallback is also uncertainty, never ignored on restart.
+  fs.writeFileSync(path.join(f.directory, 'emergency-recovery-required.json'), '{');
+  assert.equal(await gate.started(f.directory, env()), false);
+  assert.equal((await child(path.join(f.directory, 'job-started.js'), env()).result).code, 1);
+  await assert.rejects(active(f.directory), /RECOVERY_REQUIRED/);
+  fs.mkdirSync(path.join(f.directory, 'gate.lock'));
+  await assert.rejects(gate.initialize(f.directory, identity), /RECOVERY_REQUIRED/);
+  assert.deepEqual(fs.readFileSync(path.join(f.directory, 'state.json')), original);
+  assert.equal(fs.existsSync(path.join(f.directory, 'gate.lock')), true);
+});

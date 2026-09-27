@@ -12,21 +12,26 @@ public sealed record ProcessInventory(bool Complete, IReadOnlyList<ProcessLifeti
 public sealed class OwnedWorkerObservation : IWorkerLifetimeObservation
 {
     private readonly ProcessLifetime owner;
-    private readonly string runnerDirectory;
+    private readonly string? runnerDirectory;
     private readonly Func<ProcessInventory> snapshot;
     private readonly Func<ProcessLifetime, bool?> exited;
     private readonly Dictionary<(int, long), ProcessLifetime> observed = [];
     public OwnedWorkerObservation(ProcessLifetime owner, string runnerDirectory,
         Func<ProcessInventory> snapshot, Func<ProcessLifetime, bool?> exited)
     {
-        this.owner = owner; this.runnerDirectory = Path.GetFullPath(runnerDirectory);
+        this.owner = owner;
+        try { this.runnerDirectory = CanonicalPath(runnerDirectory); }
+        catch { this.runnerDirectory = null; } // Invalid/relative paths never authorize absence.
         this.snapshot = snapshot; this.exited = exited;
     }
     public bool ConfirmNoOwnedWorker()
     {
         try
         {
+            if (runnerDirectory is null) return false;
             var view = snapshot();
+            // Canonicalize all queried images first: unknown paths are uncertainty.
+            var images = view.Processes.ToDictionary(p => p, p => CanonicalPath(p.Image));
             if (!view.Complete || exited(owner) != false ||
                 !view.Processes.Any(p => p.Id == owner.Id && p.Created == owner.Created)) return false;
             var parents = new HashSet<int> { owner.Id };
@@ -39,19 +44,32 @@ public sealed class OwnedWorkerObservation : IWorkerLifetimeObservation
                     {
                         // Listener/console/batch hosts must remain alive until the planned stop.
                         // Other children, including hook/profile children, are conservatively work.
-                        if (Path.GetFileName(p.Image) is not ("Runner.Listener.exe" or "conhost.exe" or "cmd.exe"))
+                        if (Path.GetFileName(images[p]) is not ("Runner.Listener.exe" or "conhost.exe" or "cmd.exe"))
                             observed[(p.Id, p.Created)] = p;
                         changed = true;
                     }
             } while (changed);
             foreach (var p in view.Processes)
-                if (Path.GetFileName(p.Image).Equals("Runner.Worker.exe", StringComparison.OrdinalIgnoreCase) &&
-                    p.Image.StartsWith(runnerDirectory + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                if (Path.GetFileName(images[p]).Equals("Runner.Worker.exe", StringComparison.OrdinalIgnoreCase) &&
+                    IsContained(runnerDirectory, images[p]))
                     observed[(p.Id, p.Created)] = p;
             // PID disappearance/reuse is insufficient. The exact lifetime must be confirmed exited.
             return observed.Values.All(p => exited(p) == true);
         }
         catch { return false; }
+    }
+    private static string CanonicalPath(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || !Path.IsPathFullyQualified(value) ||
+            value.IndexOfAny(Path.GetInvalidPathChars()) >= 0 || value.Contains('*') || value.Contains('?'))
+            throw new ArgumentException("Fully qualified process path required.");
+        return Path.TrimEndingDirectorySeparator(Path.GetFullPath(value));
+    }
+    private static bool IsContained(string directory, string image)
+    {
+        var relative = Path.GetRelativePath(directory, image);
+        return !Path.IsPathRooted(relative) && relative != ".." &&
+            relative.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)[0] != "..";
     }
 }
 

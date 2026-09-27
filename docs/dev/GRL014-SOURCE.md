@@ -58,7 +58,15 @@ intent and PASS as well as the current local epoch/attempt/workflow SHA.
 
 State replacement uses a flushed same-volume temporary file and rename. Partial job
 records are uncertainty. An abandoned lock is **never automatically stolen or deleted**;
-startup/stop stays unavailable pending an eventual authorized recovery procedure.
+startup/planned Pause stays unavailable pending an eventual authorized recovery procedure.
+Explicit warned Stop Now attempts the normal locked emergency transition, then uses a
+file-flushed, exclusive `emergency-recovery-required.json` fallback if recording is
+unavailable. The fallback does not use `gate.lock` or change `state.json`. Its presence,
+including partial evidence, blocks hooks, startup and activation until separately
+reconciled. A recording failure still performs the owned emergency stop once and is
+reported as failure, retaining the outer lifecycle's recovery channel and an in-memory
+session fence. Retrying the same owned object never double-stops or treats unresolved
+exit as success. No recovery clearing or abandoned-lock cleanup is introduced.
 Records are retained. Exact no-Worker evidence may record a `GATE_ANOMALY` for an
 unresolved intent or crashed passed job. It never edits portable recovery JSON to
 manufacture Paused. Startup from a pass-capable state and emergency/failed termination
@@ -70,6 +78,9 @@ and two complete exact owned-lifetime observations, including one immediately be
 stop. Windows Toolhelp enumeration, creation time and process image bind ownership;
 previously observed work lifetimes are retained across disappearance/reparenting.
 Worker images from the same runner directory block even after their parent exited.
+Runner and process image paths must be fully qualified and canonicalizable; normalized
+component-relative containment is separator-independent, case-insensitive on Windows,
+and excludes sibling prefixes. Invalid paths are uncertainty.
 Listener/batch/console infrastructure may remain alive until the planned stop. Other
 owned descendants conservatively block. Permission errors, partial snapshots, root
 lifetime changes and unknown exit observations block. PID reuse distinguishes the
@@ -96,7 +107,9 @@ remain quarantined. Release requires a current gate-epoch drain acknowledgement 
 the lifetime-proof caller. No remote takeover is implemented.
 
 Lint inventories step conditions and the exact pinned action metadata. The only allowed
-unconditional step is the existing exact upload-artifact block in execute. Unknown
+unconditional step is the existing exact upload-artifact block in execute. The bounded
+step-mapping grammar consumes first-key and later-key conditions, including quoted
+keys; unsupported flow/block/alias/duplicate/ambiguous layouts fail closed. Unknown
 always/failure/cancelled exceptions, unsupported condition forms, pre actions and
 unreviewed post behavior fail closed. Checkout's reviewed post cleanup is retained;
 it is registered when its main step ran. Metadata snapshots and normalized SHA-256
@@ -145,3 +158,30 @@ Evidence is LOCAL_CHECKED, including Windows synthetic checks. A1 real pinned Wo
 environment inheritance, A5 live Git-ref concurrency semantics, OD-G, all live witnesses
 and the later independent integrated source/design review remain pending. This document
 does not claim WINDOWS_TESTED, OWNER_ACCEPTED, merge permission or live readiness.
+
+## PR #24 F1?F4 correction reproduction
+
+Packet `5854201198` retains prior accepted conclusions for unchanged source. Dedicated
+`NonWorkerDescendantAloneBlocksStop` and `OrphanImageOnlyBlocksForEquivalentRunnerPaths`
+tests independently require the descendant and orphan-image rules. The real Windows
+orphan fixture copies Node as `Runner.Worker.exe`, waits for its transient parent to
+exit, then checks both canonical and trailing-separator runner paths using complete
+Windows inventories. Infrastructure-only and sibling-prefix controls remain clear.
+
+`StaleLockRefusesPauseButWarnedStopKillsExactlyOnceAndQuarantinesRestart` leaves a real
+synthetic `gate.lock`, proves Pause refuses, Stop Now kills its harmless owned process
+once, unchanged state and fallback evidence persist, and restart/activation refuse.
+Fallback-recording and stop failures are separately tested. Node tests prove even a
+partial marker fences hooks and startup. Structural lint fixtures cover all review
+reproducers, quoted/first/last keys, status expressions and unknown layouts; the exact
+artifact exception remains allowed. Workflow/runtime bytes remain unchanged.
+
+Targeted mutation reproduction: temporarily disable the descendant rule, run
+`dotnet test tests/Grl.Integration.Tests/Grl.Integration.Tests.csproj --filter FullyQualifiedName~NonWorkerDescendantAloneBlocksStop`
+(M6); restore bytes. Then temporarily disable the image rule and run the same command
+with `--filter FullyQualifiedName~OrphanImageOnlyBlocksForEquivalentRunnerPaths` (M7).
+Both must fail and the source must be restored byte-exactly before the final campaign.
+Exact counts and restoration hashes belong in the correction's exact-head handoff.
+Presentation/Core are unchanged; the focused correction requires App build,
+Integration, hook Node, complete template, lint and exact-base diff checks.
+A1/A5 and live capabilities remain deferred/disabled; no new acceptance is claimed.

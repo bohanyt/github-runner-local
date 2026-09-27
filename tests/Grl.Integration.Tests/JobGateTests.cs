@@ -93,7 +93,7 @@ public sealed class JobGateTests
     [Fact]
     public void PartialPermissionUnknownOwnershipAndPidReuseNeverBecomeAbsence()
     {
-        var owner = new ProcessLifetime(1, 0, 100, "root.exe");
+        var owner = new ProcessLifetime(1, 0, 100, @"C:\fixture\root.exe");
         var worker = new ProcessLifetime(2, 1, 200, @"C:\fixture\Runner.Worker.exe");
         ProcessInventory view = new(true, [owner, worker]);
         bool? workerExited = false;
@@ -182,6 +182,151 @@ public sealed class JobGateTests
         using var third = await directAdapter.StartAsync(new("run.cmd", []), "2.337.0", default);
         await direct.Session.StopNowAsync(third, true);
         Assert.True(third.HasExited);
+    }
+
+    [Fact]
+    public void NonWorkerDescendantAloneBlocksStop()
+    {
+        var owner = new ProcessLifetime(10, 0, 100, @"C:\fixture\root.exe");
+        var work = new ProcessLifetime(11, 10, 200, @"C:\elsewhere\profile.exe");
+        var observer = new OwnedWorkerObservation(owner, @"C:\fixture", () => new(true, [owner, work]), _ => false);
+        Assert.False(observer.ConfirmNoOwnedWorker());
+    }
+
+    [Theory]
+    [InlineData(@"C:\fixture\runner")]
+    [InlineData(@"C:\fixture\runner\")]
+    [InlineData(@"C:\fixture\runner\.\")]
+    [InlineData(@"C:/FIXTURE/runner/")]
+    public void OrphanImageOnlyBlocksForEquivalentRunnerPaths(string runner)
+    {
+        var owner = new ProcessLifetime(10, 0, 100, @"C:\fixture\root.exe");
+        var orphan = new ProcessLifetime(11, 999, 200, @"C:\fixture\runner\bin\.\Runner.Worker.exe");
+        // Fresh observer: no retained descendant can mask the orphan-image rule.
+        var observer = new OwnedWorkerObservation(owner, runner, () => new(true, [owner, orphan]), _ => false);
+        Assert.False(observer.ConfirmNoOwnedWorker());
+    }
+
+    [Fact]
+    public void SiblingImageAndInfrastructureOnlyDoNotBlockStop()
+    {
+        var owner = new ProcessLifetime(10, 0, 100, @"C:\fixture\root.exe");
+        ProcessLifetime[] processes = [owner,
+            new(11, 999, 200, @"C:\fixture\runner2\bin\Runner.Worker.exe"),
+            new(12, 10, 201, @"C:\fixture\runner\bin\Runner.Listener.exe"),
+            new(13, 12, 202, @"C:\Windows\System32\cmd.exe"),
+            new(14, 13, 203, @"C:\Windows\System32\conhost.exe")];
+        var observer = new OwnedWorkerObservation(owner, @"C:\fixture\runner\", () => new(true, processes), _ => false);
+        Assert.True(observer.ConfirmNoOwnedWorker());
+    }
+
+    [Theory]
+    [InlineData("relative")]
+    [InlineData(@"C:relative")]
+    [InlineData("bad\0path")]
+    public void InvalidRunnerOrImagePathsNeverAuthorizeAbsence(string path)
+    {
+        var owner = new ProcessLifetime(10, 0, 100, @"C:\fixture\root.exe");
+        Assert.False(new OwnedWorkerObservation(owner, path, () => new(true, [owner]), _ => false).ConfirmNoOwnedWorker());
+        var unknown = new ProcessLifetime(11, 999, 200, path);
+        Assert.False(new OwnedWorkerObservation(owner, @"C:\fixture", () => new(true, [owner, unknown]), _ => false).ConfirmNoOwnedWorker());
+    }
+
+    [Fact]
+    public async Task RealOrphanWorkerBlocksCanonicalAndTrailingSeparatorPathsOnWindows()
+    {
+        Assert.True(OperatingSystem.IsWindows());
+        using var f = new Fixture();
+        Directory.CreateDirectory(Path.Combine(f.Runner, "bin"));
+        var exe = Path.Combine(f.Runner, "bin", "Runner.Worker.exe"); File.Copy(Fixture.Node, exe);
+        Func<string, string> q = value => JsonSerializer.Serialize(value);
+        var ready = Path.Combine(f.Base, "orphan-ready");
+        var ids = Path.Combine(f.Base, "orphan-ids");
+        var work = Path.Combine(f.Base, "orphan.cjs");
+        File.WriteAllText(work, $"require('node:fs').writeFileSync({q(ready)},'ready');setInterval(()=>{{}},1000);");
+        var launcher = Path.Combine(f.Base, "transient-parent.cjs");
+        File.WriteAllText(launcher, $"const p=require('node:child_process').spawn({q(exe)},[{q(work)}],{{detached:true,stdio:'ignore'}});" +
+            $"require('node:fs').writeFileSync({q(ids)},JSON.stringify([process.pid,p.pid]));p.unref();");
+        var root = Path.Combine(f.Base, "owned-root.cjs");
+        File.WriteAllText(root, $"require('node:child_process').spawn(process.execPath,[{q(launcher)}],{{stdio:'ignore'}});setInterval(()=>{{}},1000);");
+        using var parent = StartNode(root, []);
+        Process? orphanProcess = null;
+        try
+        {
+            await WaitFor(ids); await WaitFor(ready);
+            var pid = JsonSerializer.Deserialize<int[]>(File.ReadAllText(ids))!;
+            for (var i = 0; i < 200; i++)
+            {
+                try { using var former = Process.GetProcessById(pid[0]); if (former.HasExited) break; }
+                catch (ArgumentException) { break; }
+                await Task.Delay(20);
+            }
+            orphanProcess = Process.GetProcessById(pid[1]); Assert.False(orphanProcess.HasExited);
+            var view = WindowsProcessInventory.Capture(parent.Id);
+            Assert.True(view.Complete);
+            Assert.DoesNotContain(view.Processes, p => p.Id == pid[0]);
+            Assert.Contains(view.Processes, p => p.Id == pid[1] && p.ParentId == pid[0]);
+            var owner = new ProcessLifetime(parent.Id, 0, parent.StartTime.ToUniversalTime().Ticks, Fixture.Node);
+            foreach (var spelling in new[] { f.Runner, f.Runner + Path.DirectorySeparatorChar })
+                Assert.False(new OwnedWorkerObservation(owner, spelling,
+                    () => WindowsProcessInventory.Capture(parent.Id), WindowsProcessInventory.HasExited).ConfirmNoOwnedWorker());
+            Assert.False(parent.HasExited); Assert.False(orphanProcess.HasExited);
+        }
+        finally
+        {
+            if (orphanProcess is not null) { if (!orphanProcess.HasExited) { orphanProcess.Kill(true); await orphanProcess.WaitForExitAsync(); } orphanProcess.Dispose(); }
+            if (!parent.HasExited) { parent.Kill(true); await parent.WaitForExitAsync(); }
+        }
+    }
+
+    [Fact]
+    public async Task StaleLockRefusesPauseButWarnedStopKillsExactlyOnceAndQuarantinesRestart()
+    {
+        using var f = new Fixture(); await f.Install();
+        var script = Path.Combine(f.Base, "emergency-root.cjs"); File.WriteAllText(script, "setInterval(()=>{},1000);");
+        using var process = StartNode(script, []); var owned = new RealOwned(process);
+        Directory.CreateDirectory(Path.Combine(f.Gate, "gate.lock"));
+        var before = File.ReadAllBytes(Path.Combine(f.Gate, "state.json"));
+        try
+        {
+            await Assert.ThrowsAsync<InvalidOperationException>(() => f.Session.PauseAsync(owned, new Observation(true)));
+            Assert.Equal(0, owned.Stops); Assert.False(process.HasExited);
+            await Assert.ThrowsAsync<InvalidOperationException>(() => f.Session.StopNowAsync(owned, false));
+            await f.Session.StopNowAsync(owned, true);
+            Assert.Equal(1, owned.Stops); Assert.True(process.HasExited);
+            var marker = Path.Combine(f.Gate, "emergency-recovery-required.json");
+            Assert.Equal("RECOVERY_REQUIRED", JsonDocument.Parse(File.ReadAllText(marker)).RootElement.GetProperty("kind").GetString());
+            Assert.Equal(before, File.ReadAllBytes(Path.Combine(f.Gate, "state.json")));
+            Assert.True(Directory.Exists(Path.Combine(f.Gate, "gate.lock")));
+            await f.Session.StopNowAsync(owned, true); Assert.Equal(1, owned.Stops);
+            await Assert.ThrowsAsync<InvalidOperationException>(() => f.Session.ActivateLocalAsync([new(42, "fixture")], new Observation(true)));
+            var restarted = new JobGateSession(JobGateCapability.Synthetic, f.Gate, f.Runner, Fixture.Node, Identity);
+            await Assert.ThrowsAsync<InvalidOperationException>(() => restarted.StartupInactiveAsync());
+        }
+        finally { if (!process.HasExited) { process.Kill(true); await process.WaitForExitAsync(); } }
+    }
+
+    [Fact]
+    public async Task FallbackRecordingFailureStillStopsAndReportsUncertainty()
+    {
+        using var f = new Fixture(); await f.Install();
+        Directory.CreateDirectory(Path.Combine(f.Gate, "emergency-recovery-required.json"));
+        var owned = new FakeOwned();
+        var failure = await Assert.ThrowsAsync<InvalidOperationException>(() => f.Session.StopNowAsync(owned, true));
+        Assert.Contains("recording failed", failure.Message);
+        Assert.True(owned.HasExited); Assert.Equal(1, owned.Stops);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => f.Session.StartupInactiveAsync());
+    }
+
+    [Fact]
+    public async Task FailedEmergencyStopIsNotRetriedOrReportedSuccessful()
+    {
+        using var f = new Fixture(); await f.Install();
+        var owned = new FakeOwned { Fail = true };
+        await Assert.ThrowsAsync<IOException>(() => f.Session.StopNowAsync(owned, true));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => f.Session.StopNowAsync(owned, true));
+        Assert.Equal(1, owned.Stops); Assert.False(owned.HasExited);
+        Assert.True(f.State.GetProperty("recoveryRequired").GetBoolean());
     }
 
     private sealed class Observation(Func<bool> observe) : IWorkerLifetimeObservation

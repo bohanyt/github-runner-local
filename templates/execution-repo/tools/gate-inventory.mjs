@@ -26,33 +26,71 @@ const allowedArtifact = `      - uses: actions/upload-artifact@ea165f8d65b6e75b5
           if-no-files-found: warn
           overwrite: true`;
 
+// Bounded block step-mapping grammar. Every line/key is consumed or rejected;
+// flow mappings, aliases, block scalars and ambiguous indentation are unsupported.
+function stepMapping(text, errors) {
+  const values = new Map();
+  let inputs = false;
+  const inputKeys = new Set();
+  for (const [index, line] of text.split('\n').entries()) {
+    const prefix = index === 0 ? /^      - (.*)$/ : /^        (\S.*)$/;
+    const top = prefix.exec(line);
+    if (!top) {
+      const input = inputs && /^          ([A-Za-z][A-Za-z0-9-]*): (.+)$/.exec(line);
+      if (!input || inputKeys.has(input[1]) || /^[|>&*!{[]/.test(input[2])) errors.push('GATE_STEP_GRAMMAR');
+      else inputKeys.add(input[1]);
+      continue;
+    }
+    const entry = /^(?:([A-Za-z][A-Za-z0-9-]*)|"([A-Za-z][A-Za-z0-9-]*)"|'([A-Za-z][A-Za-z0-9-]*)'): *(.*)$/.exec(top[1]);
+    if (!entry) { errors.push('GATE_STEP_GRAMMAR'); inputs = false; continue; }
+    const key = entry[1] ?? entry[2] ?? entry[3], value = entry[4];
+    if (!['id', 'uses', 'if', 'with', 'continue-on-error'].includes(key) || values.has(key)) errors.push('GATE_STEP_GRAMMAR');
+    values.set(key, value);
+    inputs = key === 'with';
+    if (inputs ? value !== '' : value === '' || /^[|>&*{[]/.test(value)) errors.push('GATE_STEP_GRAMMAR');
+  }
+  return values;
+}
+const scalar = value => value && ((value.startsWith('"') && value.endsWith('"')) ||
+  (value.startsWith("'") && value.endsWith("'"))) ? value.slice(1, -1) : value;
+
 // Deliberately a narrow grammar for this fixed template, not a permissive general YAML interpreter.
 // Unsupported conditions/layouts/action metadata fail closed and require a new inventory decision.
 export function gateInventory(workflow, metadata = loadActionMetadata()) {
   const errors = [];
   const lines = normalize(workflow).split('\n');
   let job, inSteps = false, steps = [], current;
+  const stepJobs = new Set();
   const flush = () => { if (current) steps.push({ job, text: current.join('\n').trimEnd() }); current = null; };
   for (const line of lines) {
     const match = /^  ([a-z]+):$/.exec(line);
     if (match) { flush(); job = match[1]; inSteps = false; }
-    if (line === '    steps:') { inSteps = true; continue; }
+    if (line === '    steps:') {
+      if (!['admit', 'execute', 'report', 'verdict'].includes(job) || stepJobs.has(job)) errors.push('GATE_STEP_GRAMMAR');
+      stepJobs.add(job); inSteps = true; continue;
+    }
+    if (/^    (?:steps|"steps"|'steps')\s*:/.test(line)) errors.push('GATE_STEP_GRAMMAR');
     if (!inSteps || !line.trim()) continue;
     if (/^      - /.test(line)) { flush(); current = [line]; }
     else if (/^        /.test(line) && current) current.push(line);
     else errors.push('GATE_STEP_GRAMMAR');
   }
   flush();
+  if (stepJobs.size !== 4) errors.push('GATE_STEP_GRAMMAR');
   let exceptions = 0;
   for (const step of steps) {
-    const condition = /^        if:\s*(.*)$/m.exec(step.text)?.[1];
+    const mapping = stepMapping(step.text, errors);
+    const condition = scalar(mapping.get('if'));
     if (condition && (/^[*!&]/.test(condition) || /\bsuccess\s*\(/i.test(condition) &&
         !/^(?:\$\{\{\s*)?success\(\)(?:\s*\}\})?$/.test(condition))) errors.push('GATE_CONDITION_UNKNOWN');
     if (condition && (/[|>]/.test(condition) || /(?:always|failure|cancelled)\s*\(/i.test(condition))) {
       if (step.job !== 'execute' || step.text !== allowedArtifact) errors.push('GATE_UNCONDITIONAL_STEP');
       else exceptions++;
     }
-    const ref = /\buses:\s*([^\s]+)/.exec(step.text)?.[1];
+    if (condition && !/(?:always|failure|cancelled)\s*\(/i.test(condition) &&
+        !['success()', '${{ success() }}', "steps.run-profile.outputs.execution_status == 'BLOCKED'"].includes(condition))
+      errors.push('GATE_CONDITION_UNKNOWN');
+    const ref = scalar(mapping.get('uses'));
     if (!ref) { errors.push('GATE_ACTION_UNKNOWN'); continue; }
     const key = ref.replace('./grl-trusted/', './');
     const action = metadata[key];

@@ -66,7 +66,10 @@ function validState(s) {
       !s.allowedWorkflowShas.every(x => /^[a-f0-9]{40}$/.test(x))) fail('INVALID_STATE');
   return s;
 }
-function state(directory) { return validState(json(fileAt(directory, 'state.json'))); }
+function requireEmergencyReconciled(directory) {
+  if (fs.existsSync(fileAt(directory, 'emergency-recovery-required.json'))) fail('RECOVERY_REQUIRED');
+}
+function state(directory) { requireEmergencyReconciled(directory); return validState(json(fileAt(directory, 'state.json'))); }
 function context(env) {
   const c = { repo: env.GITHUB_REPOSITORY, runnerName: env.RUNNER_NAME,
     runnerId: Number(env.GRL_GATE_RUNNER_ID), run: env.GITHUB_RUN_ID,
@@ -161,6 +164,7 @@ async function completed(directory, env = process.env, checkpoint = async () => 
   });
 }
 async function initialize(directory, identity) {
+  requireEmergencyReconciled(root(directory));
   return locked(directory, () => {
     for (const name of ['jobs', 'ledger']) {
       const dir = fileAt(directory, name);

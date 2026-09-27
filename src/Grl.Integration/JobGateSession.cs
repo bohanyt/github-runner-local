@@ -22,6 +22,8 @@ public sealed class JobGateSession
     private readonly string runner;
     private readonly string node;
     private readonly JobGateIdentity identity;
+    private readonly HashSet<IOwnedRunnerProcess> emergencyStops = new(ReferenceEqualityComparer.Instance);
+    private bool emergencyRecordingFailed;
     private readonly SemaphoreSlim operations = new(1, 1);
     private readonly JsonSerializerOptions json = new(JsonSerializerDefaults.Web);
     private static readonly string[] Resources = ["gate.cjs", "configuration.cjs", "control.cjs",
@@ -140,13 +142,36 @@ public sealed class JobGateSession
         await operations.WaitAsync(ct);
         try
         {
-            await InvokeAsync("emergency", new { }, ct);
+            var target = owned;
             if (owned is GateOwnedProcess gated)
             {
                 if (!ReferenceEquals(gated.Gate, this)) throw new InvalidOperationException("Owned gate identity mismatch.");
-                await gated.Inner.StopAsync(ct);
+                target = gated.Inner;
             }
-            else await owned.StopAsync(ct);
+            if (emergencyStops.Contains(target))
+            {
+                if (emergencyRecordingFailed) throw new InvalidOperationException("Emergency stop already attempted; recovery recording failed.");
+                if (!target.HasExited) throw new InvalidOperationException("Emergency stop already attempted; owned process exit remains unresolved.");
+                return;
+            }
+            Exception? recordingFailure = null;
+            try { await InvokeAsync("emergency", new { }, CancellationToken.None); }
+            catch (Exception normalFailure)
+            {
+                try { RecordEmergencyFallback(); }
+                catch (Exception fallbackFailure)
+                {
+                    emergencyRecordingFailed = true; // Also quarantine this session if persistence is unavailable.
+                    recordingFailure = new AggregateException(normalFailure, fallbackFailure);
+                }
+            }
+            // Once warned, recording/cancellation failures must not suppress or duplicate the kill.
+            emergencyStops.Add(target);
+            try { await target.StopAsync(CancellationToken.None); }
+            catch (Exception stopFailure) when (recordingFailure is not null)
+            { throw new AggregateException("Emergency stop and recovery recording failed.", recordingFailure, stopFailure); }
+            if (recordingFailure is not null)
+                throw new InvalidOperationException("Emergency stop attempted; durable recovery recording failed.", recordingFailure);
         }
         finally { operations.Release(); }
     }
@@ -160,12 +185,30 @@ public sealed class JobGateSession
 
     public async Task VerifyAsync(CancellationToken ct = default)
     {
+        if (emergencyRecordingFailed || Path.Exists(Path.Combine(directory, "emergency-recovery-required.json")))
+            throw new InvalidOperationException("Emergency recovery evidence requires reconciliation.");
         ValidateDirectory(directory); ValidateDirectory(runner);
         foreach (var name in Resources)
             if (!RunnerBatchBoundary.OrdinaryDescendantFile(directory, name) ||
                 !SHA256.HashData(File.ReadAllBytes(Path.Combine(directory, name))).SequenceEqual(SHA256.HashData(Resource(name))))
                 throw new InvalidOperationException("Gate-enabled start refuses missing or unverified hooks.");
         await InvokeAsync("verify", new { runner, identity.RunnerId }, ct);
+    }
+
+    private void RecordEmergencyFallback()
+    {
+        ValidateDirectory(directory);
+        const string name = "emergency-recovery-required.json";
+        var marker = Path.Combine(directory, name);
+        if (Path.Exists(marker))
+        {
+            if (!RunnerBatchBoundary.OrdinaryDescendantFile(directory, name))
+                throw new IOException("Emergency marker is not an ordinary file.");
+            return; // Presence (including partial evidence) remains a permanent fail-closed fence.
+        }
+        using var file = new FileStream(marker, FileMode.CreateNew, FileAccess.Write, FileShare.Read);
+        file.Write(JsonSerializer.SerializeToUtf8Bytes(new { v = 1, kind = "RECOVERY_REQUIRED", reason = "EMERGENCY_RECORD_UNAVAILABLE" }, json));
+        file.Flush(true);
     }
 
     private static void RequireNoWorker(IWorkerLifetimeObservation workers)
