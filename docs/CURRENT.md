@@ -1,31 +1,34 @@
 # CURRENT — github-runner-local
 
-Updated: 2026-09-27. Phase: **GRL014_SOURCE_MERGED; A1_ID3_NETWORK_GATED_RETRY_AUTHORIZED; A5_ODG_GATED; GRL015_ACCEPTED**.
+Updated: 2026-09-27. Phase: **GRL014_SOURCE_MERGED; A1_NETWORK_DIAG_REQUIRED; A5_ODG_GATED; GRL015_ACCEPTED**.
 
 ## Authority
 
 - Canonical branch: main; Control Tower coordinates on Issue #1.
-- Handoff: `docs/control-tower/handoffs/GRL-20260927-A1-ID3-NETWORK-GATED-RETRY-V60.md`.
-- Sentinel: `END_OF_GRL_HANDOFF key=GRL-20260927-A1-ID3-NETWORK-GATED-RETRY-V60 sections=5`.
-- Active task: network-gated successor retry of owner-authorized A1 live witness on existing office runner ID3.
-- Active packet: Issue #18 **`5857096676`**, FULL through `END_OF_GRL014_A1_NETWORK_RETRY_PACKET key=GRL014-A1-ID3-NETWORK-GATED-RETRY-20260927 sections=6`.
+- Handoff: `docs/control-tower/handoffs/GRL-20260927-A1-CODELOAD-DIAG-V61.md`.
+- Sentinel: `END_OF_GRL_HANDOFF key=GRL-20260927-A1-CODELOAD-DIAG-V61 sections=5`.
+- Active task: diagnose intermittent `codeload.github.com` action archive transfer before any further A1 retry.
+- Active packet: Issue #18 **`5857315791`**, FULL through `END_OF_GRL014_NETWORK_DIAG_PACKET key=GRL014-A1-CODELOAD-DIAG-20260927 sections=6`.
 
-## Prior attempt
+## State
 
-Issue #18 `5857026595`: checkpoint/rollback PASS; request #1 cancelled before execute hook because codeload action download timed out. Request #2 not posted.
+Latest A1 retry Issue #18 `5857287220` blocked at the mandatory post-restart network gate. No witness request was posted; rollback passed; same ID3 is online/idle at baseline.
 
-Retain real integration evidence for admit/report/verdict and admit hook-before-checkout ordering.
+Retain prior partial A1 real integration evidence. Execute PASS/profile and execute refusal remain pending.
 
-## Retry rule
+## Diagnostic rule
 
-Before any live mutation/request, exact pinned action archive downloads must pass two consecutive scratch-download rounds. After install/restart, repeat one round before request #1. Do not alter runner action cache or network/system settings.
+No A1 retry is authorized right now.
 
-Opus local Windows preferred. Product/wizard starts/stops/resumes are owner-performed from Explorer/desktop only, never from agent shell.
+Network diagnosis is scratch/read-only only: repeated exact codeload GETs, per-process HTTP/1.1/IPv4 comparisons, read-only proxy/DNS/TLS observations.
 
-Same ID3, exactly two new js-smoke requests maximum if prerequisites hold, byte-exact restore.
+Do NOT mutate runner/root/.env, restart product, post GRL requests, seed action cache, change proxy/DNS/firewall/AV/EDR/domain/security settings, or switch the runner laptop network.
+
+## Sequence
+
+**SEQUENTIAL:** network diagnosis -> CT classification -> bounded next decision.
 
 ## Safety
 
-A5/OD-G, personal enrollment and cross-machine switching remain unauthorized.
-No re-registration/removal, reboot, workflow/profile mutation, third request, proxy/DNS/firewall/domain/security changes or hosted Actions.
-ARCHIVE/CHECKPOINT FIRST.
+A1 remains pending. A5/OD-G, personal enrollment and cross-machine switching remain unauthorized.
+ARCHIVE/CHECKPOINT FIRST for any later live action.
